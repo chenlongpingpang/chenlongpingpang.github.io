@@ -96,6 +96,10 @@
       resultDiv.innerHTML = '请输入正确的积分';
       return;
     }
+    if (yourPoints>3000 || yourPoints<0 || opponentPoints>3000 || opponentPoints<0 ) {
+      resultDiv.innerHTML = '请输入正确的积分';
+      return;
+    }
     
     var difference = yourPoints - opponentPoints;
     var newYourPoints = yourPoints;
