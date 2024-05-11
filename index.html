@@ -1,10 +1,295 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>开球网积分计算</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>开球网积分计算</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 20px;
+  }
+  .container {
+    max-width: 400px;
+    margin: 0 auto;
+  }
+  h1 {
+    text-align: center;
+  }
+  .input-container {
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+  }
+  input[type="text"] {
+    width: calc(50% - 25px);
+    padding: 8px;
+    margin-right: 10px;
+    box-sizing: border-box;
+  }
+  #winbutton {
+    display: inline-block; 
+    width: calc(50% - 5px);
+    padding: 10px;
+    margin-top: 10px;
+    background-color: red;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  #losebutton {
+    display: inline-block; 
+    width: calc(50% - 5px);
+    padding: 10px;
+    margin-top: 10px;
+    background-color: green;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  .result {
+    margin-top: 20px;
+    text-align: center;
+  }
+  #yourchange {
+    margin-left: 10px;
+    white-space: nowrap; /* 防止文本换行 */
+  }
+  #opponentchange {
+    margin-left: 10px;
+    white-space: nowrap; /* 防止文本换行 */
+  }
+</style>
 </head>
 <body>
-123
+
+<div class="container">
+  <h1>开球网积分计算</h1>
+  <div class="input-container">
+    <label for="yourPoints">你的积分：</label>
+    <input type="text" id="yourPoints" placeholder="请输入你的积分">
+    <div id="yourchange"> </div>
+  </div>
+  <div class="input-container">
+    <label for="opponentPoints">对手积分：</label>
+    <input type="text" id="opponentPoints" placeholder="请输入对手的积分">
+    <div id="opponentchange"> </div>
+  </div>
+  <button onclick="calculatePoints('win')" id="winbutton">你赢了</button>
+  <button onclick="calculatePoints('lose')" id="losebutton">你输了</button>
+  <div class="result" id="result"></div>
+</div>
+
+<script>
+  function calculatePoints(outcome) {
+    var yourPointsInput = document.getElementById('yourPoints');
+    var opponentPointsInput = document.getElementById('opponentPoints');
+    var resultDiv = document.getElementById('result');
+    
+    var yourPoints = parseInt(yourPointsInput.value);
+    var opponentPoints = parseInt(opponentPointsInput.value);
+    
+    if (isNaN(yourPoints) || isNaN(opponentPoints)) {
+      resultDiv.innerHTML = '请输入正确的积分';
+      return;
+    }
+    
+    var difference = yourPoints - opponentPoints;
+    var newYourPoints = yourPoints;
+    var newOpponentPoints = opponentPoints;
+    var is_win;
+    
+    if (outcome === 'win') {
+      is_win=1;
+      if (difference >= 0) {
+        if (difference >= 0 && difference <= 12) {
+          newYourPoints += 8;
+          newOpponentPoints -= 8;
+        } else if (difference >= 13 && difference <= 37) {
+          newYourPoints += 7;
+          newOpponentPoints -= 7;
+        } else if (difference >= 38 && difference <= 62) {
+          newYourPoints += 6;
+          newOpponentPoints -= 6;
+        } else if (difference >= 63 && difference <= 87) {
+          newYourPoints += 5;
+          newOpponentPoints -= 5;
+        } else if (difference >= 88 && difference <= 112) {
+          newYourPoints += 4;
+          newOpponentPoints -= 4;
+        } else if (difference >= 113 && difference <= 137) {
+          newYourPoints += 3;
+          newOpponentPoints -= 3;
+        } else if (difference >= 138 && difference <= 162) {
+          newYourPoints += 2;
+          newOpponentPoints -= 2;
+        } else if (difference >= 163 && difference <= 187) {
+          newYourPoints += 2;
+          newOpponentPoints -= 2;
+        } else if (difference >= 188 && difference <= 212) {
+          newYourPoints += 1;
+          newOpponentPoints -= 1;
+        } else if (difference >= 213 && difference <= 237) {
+          newYourPoints += 1;
+          newOpponentPoints -= 1;
+        }
+      } else {
+        difference = Math.abs(difference);
+        if (difference >= 0 && difference <= 12) {
+          newYourPoints += 8;
+          newOpponentPoints -= 8;
+        } else if (difference >= 13 && difference <= 37) {
+          newYourPoints += 10;
+          newOpponentPoints -= 10;
+        } else if (difference >= 38 && difference <= 62) {
+          newYourPoints += 13;
+          newOpponentPoints -= 13;
+        } else if (difference >= 63 && difference <= 87) {
+          newYourPoints += 16;
+          newOpponentPoints -= 16;
+        } else if (difference >= 88 && difference <= 112) {
+          newYourPoints += 20;
+          newOpponentPoints -= 20;
+        } else if (difference >= 113 && difference <= 137) {
+          newYourPoints += 25;
+          newOpponentPoints -= 25;
+        } else if (difference >= 138 && difference <= 162) {
+          newYourPoints += 30;
+          newOpponentPoints -= 30;
+        } else if (difference >= 163 && difference <= 187) {
+          newYourPoints += 35;
+          newOpponentPoints -= 35;
+        } else if (difference >= 188 && difference <= 212) {
+          newYourPoints += 40;
+          newOpponentPoints -= 40;
+        } else if (difference >= 213 && difference <= 237) {
+          newYourPoints += 45;
+          newOpponentPoints -= 45;
+        } else if (difference >= 238) {
+          newYourPoints += 50;
+          newOpponentPoints -= 50;
+        }
+      }
+    } else if (outcome === 'lose') {
+      is_win=0;
+      if (difference >= 0) {
+        if (difference >= 0 && difference <= 12) {
+          newYourPoints -= 8;
+          newOpponentPoints += 8;
+        } else if (difference >= 13 && difference <= 37) {
+          newYourPoints -= 10;
+          newOpponentPoints += 10;
+        } else if (difference >= 38 && difference <= 62) {
+          newYourPoints -= 13;
+          newOpponentPoints += 13;
+        } else if (difference >= 63 && difference <= 87) {
+          newYourPoints -= 16;
+          newOpponentPoints += 16;
+        } else if (difference >= 88 && difference <= 112) {
+          newYourPoints -= 20;
+          newOpponentPoints += 20;
+        } else if (difference >= 113 && difference <= 137) {
+          newYourPoints -= 25;
+          newOpponentPoints += 25;
+        } else if (difference >= 138 && difference <=
+        162) {
+          newYourPoints -= 30;
+          newOpponentPoints += 30;
+        } else if (difference >= 163 && difference <= 187) {
+          newYourPoints -= 35;
+          newOpponentPoints += 35;
+        } else if (difference >= 188 && difference <= 212) {
+          newYourPoints -= 40;
+          newOpponentPoints += 40;
+        } else if (difference >= 213 && difference <= 237) {
+          newYourPoints -= 45;
+          newOpponentPoints += 45;
+        } else if (difference >= 238) {
+          newYourPoints -= 50;
+          newOpponentPoints += 50;
+        }
+      } else {
+        difference = Math.abs(difference);
+        if (difference >= 0 && difference <= 12) {
+          newYourPoints -= 8;
+          newOpponentPoints += 8;
+        } else if (difference >= 13 && difference <= 37) {
+          newYourPoints -= 7;
+          newOpponentPoints += 7;
+        } else if (difference >= 38 && difference <= 62) {
+          newYourPoints -= 6;
+          newOpponentPoints += 6;
+        } else if (difference >= 63 && difference <= 87) {
+          newYourPoints -= 5;
+          newOpponentPoints += 5;
+        } else if (difference >= 88 && difference <= 112) {
+          newYourPoints -= 4;
+          newOpponentPoints += 4;
+        } else if (difference >= 113 && difference <= 137) {
+          newYourPoints -= 3;
+          newOpponentPoints += 3;
+        } else if (difference >= 138 && difference <= 162) {
+          newYourPoints -= 2;
+          newOpponentPoints += 2;
+        } else if (difference >= 163 && difference <= 187) {
+          newYourPoints -= 2;
+          newOpponentPoints += 2;
+        } else if (difference >= 188 && difference <= 212) {
+          newYourPoints -= 1;
+          newOpponentPoints += 1;
+        } else if (difference >= 213 && difference <= 237) {
+          newYourPoints -= 1;
+          newOpponentPoints += 1;
+        } else if (difference >= 238) {
+          newYourPoints -= 0;
+          newOpponentPoints += 0;
+        }
+      }
+    }
+
+    var yourPointsChange = newYourPoints - yourPoints;
+    var opponentPointsChange = newOpponentPoints - opponentPoints;
+
+    var resultText = '';
+    if (yourPointsChange > 0) {
+      resultText += '你的积分增加了' + yourPointsChange + '，现在是' + newYourPoints;
+    } else if (yourPointsChange < 0) {
+      resultText += '你的积分减少了' + Math.abs(yourPointsChange) + '，现在是' + newYourPoints;
+    } else {
+      resultText += '你的积分保持不变，现在是' + newYourPoints;
+    }
+    resultText += '<br>';
+
+    if (opponentPointsChange > 0) {
+      resultText += '对手的积分增加了' + opponentPointsChange + '，现在是' + newOpponentPoints;
+    } else if (opponentPointsChange < 0) {
+      resultText += '对手的积分减少了' + Math.abs(opponentPointsChange) + '，现在是' + newOpponentPoints;
+    } else {
+      resultText += '对手的积分保持不变，现在是' + newOpponentPoints;
+    }
+
+    resultDiv.innerHTML = resultText;
+
+    if(is_win == 1){
+        document.getElementById("yourchange").innerHTML = "+" + yourPointsChange + " = " + newYourPoints;
+        document.getElementById("opponentchange").innerHTML = "-" + Math.abs(opponentPointsChange) + " = " + newOpponentPoints;
+        document.getElementById("yourchange").style.color = "red";
+        document.getElementById("opponentchange").style.color = "green";
+    }
+    if(is_win == 0){
+        document.getElementById("yourchange").innerHTML = "-" + Math.abs(yourPointsChange) + " = " + newYourPoints;
+        document.getElementById("opponentchange").innerHTML = "+" + opponentPointsChange + " = " + newOpponentPoints;
+        document.getElementById("yourchange").style.color = "green";
+        document.getElementById("opponentchange").style.color = "red";
+    }
+       
+
+  }
+</script>
+
 </body>
 </html>
+
