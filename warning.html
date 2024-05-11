@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>为什么不准</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1, h2{
+            text-align: center;
+        }
+        .button {
+            display: block;
+            width: calc(100% / 3); /* 设置为表格宽度的 1/3 */
+            margin: 20px auto; /* 上下边距为 20px，左右自动居中 */
+            padding: 10px;
+            margin-top: 20px;
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            text-align: center;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>注意事项</h1>
+        <p>比赛结束后，立即生成预估积分计算表<br>等待5天左右，会生成实际积分计算表。</p>
+        <h2>为什么预估和实际分数变化不同</h2>
+        <p>
+            ①假如你1700分，在比赛A中战胜了同为1700分的张三，按照规则你加8分。
+            但是由于张三在昨天参加了另一个比赛B，并扣了50分（还未结算，此时张三仍是1700分）。
+            在当天比赛结束后，积分预估表上，你的积分显示为1700+8=1708。张三的积分显示为1700-8=1692。
+            但是等5天后，张三参加的比赛B先将张三积分结算到1650，再用张三的1650积分参与比赛A的积分计算。
+            此时按照规则，1700战胜1650仅能加6分，因此最终的积分变化表与当时预估的表不同，你的积分显示为1700+6=1706。张三的积分显示为1650-6=1644。
+            <br><br>
+            ②假如你1700分，在比赛A中战胜了同为1700分的张三，按照规则你加8分。但是按照比赛顺序，张三在和你打之前刚刚输给了一名1400的选手，扣了50分。
+            因此，你战胜的并不是1700分的张三，而是1650分的张三。比赛积分的计算是“动态”的，这个系统会自动计算，在预估和实际变化表上都能体现出来。
+        </p>
+        <h2>为什么要动态计算积分</h2>
+        <p>假设一名选手有1700分实力，但是仅有1300分。在比赛中他战胜了20个1600分的选手，如果不动态计算，他的最终分数为1300+50×20=2300分，显然是错误的。
+            如果动态计算，他的分数为，1300战胜1600变为1350. 1350战胜1600变为1400. 1400战胜1600变为1440 .以此类推变为1470 1495 1515 1531 等等
+    </div>
+    <button class="button" onclick="location.href='index.html';">返回</button>
+</body>
+</html>

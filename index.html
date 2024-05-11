@@ -50,6 +50,19 @@
     border-radius: 5px;
     cursor: pointer;
   }
+  .button {
+    display: inline-block;
+    width: calc(33.33% - 10px);
+    padding: 10px;
+    margin-top: 10px;
+    background-color: #007bff;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    text-align: center;
+    text-decoration: none;
+  }
   .result {
     margin-top: 20px;
     text-align: center;
@@ -61,6 +74,13 @@
   #opponentchange {
     margin-left: 10px;
     white-space: nowrap; /* 防止文本换行 */
+  }
+  .bug-feedback {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    font-size: 12px;
+    color: #666;
   }
 </style>
 </head>
@@ -81,6 +101,12 @@
   <button onclick="calculatePoints('win')" id="winbutton">你赢了</button>
   <button onclick="calculatePoints('lose')" id="losebutton">你输了</button>
   <div class="result" id="result"></div>
+  <div style="display: flex; justify-content: space-between;">
+    <button class="button" onclick="location.href='jifen.html';">如何估计积分</button>
+    <button class="button" onclick="location.href='table.html';">积分变化规则</button>
+    <button class="button" onclick="location.href='warning.html';">注意事项</button>
+  </div>
+  <div class="bug-feedback">建议反馈：1317333614@qq.com</div>
 </div>
 
 <script>
@@ -93,11 +119,11 @@
     var opponentPoints = parseInt(opponentPointsInput.value);
     
     if (isNaN(yourPoints) || isNaN(opponentPoints)) {
-      resultDiv.innerHTML = '请输入正确的积分';
+      resultDiv.innerHTML = '正确积分范围0~3000';
       return;
     }
-    if (yourPoints>3000 || yourPoints<0 || opponentPoints>3000 || opponentPoints<0 ) {
-      resultDiv.innerHTML = '请输入正确的积分';
+    if (yourPoints>3001 || yourPoints<0 || opponentPoints>3001 || opponentPoints<0 ) {
+      resultDiv.innerHTML = '正确积分范围0~3000';
       return;
     }
     
