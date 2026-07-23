@@ -12,13 +12,16 @@ const hasSearchedUsers = ref(false)
 const page = ref(1)
 const statScope = ref('all')
 const annualScoreOpen = ref(false)
-const loadingProgress = ref({ pages: 0, records: 0 })
+const loadingProgress = ref({ pages: 0, records: 0, resumed: false })
 const pageSize = 20
 const upstreamBase = (import.meta.env.VITE_KQ_BASE_URL || 'https://kaiqiuwang.cc/xcx/public/index.php/api').replace(/\/$/, '')
 const maxRecordPages = 500
 const maxCandidates = 50
 const recordBatchSize = 5
+const recordRetryAttempts = 3
+const completeCacheLifetime = 6 * 60 * 60 * 1000
 let activeRecordController = null
+let cacheDatabasePromise = null
 
 const oneYearCutoff = computed(() => {
   const cutoff = new Date()
@@ -94,6 +97,72 @@ async function fetchUpstream(path, params, signal) {
   return data
 }
 
+function openCacheDatabase() {
+  if (!('indexedDB' in window)) return Promise.reject(new Error('当前浏览器不支持断点缓存'))
+  if (cacheDatabasePromise) return cacheDatabasePromise
+  cacheDatabasePromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open('match-history-cache', 1)
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains('queries')) {
+        request.result.createObjectStore('queries', { keyPath: 'userId' })
+      }
+    }
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+  return cacheDatabasePromise
+}
+
+async function readQueryCache(userId) {
+  try {
+    const database = await openCacheDatabase()
+    return await new Promise((resolve, reject) => {
+      const request = database.transaction('queries').objectStore('queries').get(String(userId))
+      request.onsuccess = () => resolve(request.result || null)
+      request.onerror = () => reject(request.error)
+    })
+  } catch {
+    return null
+  }
+}
+
+async function writeQueryCache(payload) {
+  try {
+    const database = await openCacheDatabase()
+    await new Promise((resolve, reject) => {
+      const request = database.transaction('queries', 'readwrite').objectStore('queries').put(payload)
+      request.onsuccess = () => resolve()
+      request.onerror = () => reject(request.error)
+    })
+  } catch {
+    // 缓存不可用时仍可继续在线查询
+  }
+}
+
+function waitForRetry(milliseconds, signal) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, milliseconds)
+    signal.addEventListener('abort', () => {
+      clearTimeout(timer)
+      reject(new DOMException('查询已取消', 'AbortError'))
+    }, { once: true })
+  })
+}
+
+async function fetchRecordPage(userId, recordPage, signal) {
+  let lastError
+  for (let attempt = 1; attempt <= recordRetryAttempts; attempt += 1) {
+    try {
+      return await fetchUpstream('/User/getGames', { uid: userId, page: recordPage }, signal)
+    } catch (requestError) {
+      if (requestError.name === 'AbortError') throw requestError
+      lastError = requestError
+      if (attempt < recordRetryAttempts) await waitForRetry(attempt * 600, signal)
+    }
+  }
+  throw lastError
+}
+
 async function searchUsers() {
   const value = keyword.value.trim()
   if (!value || value.length > 30) {
@@ -148,23 +217,53 @@ async function selectUser(user) {
   hasSearchedUsers.value = false
   page.value = 1
   statScope.value = 'all'
-  loadingProgress.value = { pages: 0, records: 0 }
+  loadingProgress.value = { pages: 0, records: 0, resumed: false }
 
   try {
     const games = new Map()
     let truncated = false
+    let completed = false
+    let startPage = 1
+    const cached = await readQueryCache(user.uid)
 
-    for (let batchStart = 1; batchStart <= maxRecordPages; batchStart += recordBatchSize) {
+    if (cached?.games?.length) {
+      cached.games.forEach((game, index) => {
+        games.set(String(game.gameid || `cached-${index}`), game)
+      })
+      startPage = Math.max(1, Number(cached.nextPage) || 1)
+      loadingProgress.value = {
+        pages: Math.max(0, startPage - 1),
+        records: games.size,
+        resumed: !cached.complete
+      }
+      result.value = summarizeGames(String(user.uid), [...games.values()], false, user)
+
+      if (cached.complete && Date.now() - Number(cached.updatedAt || 0) < completeCacheLifetime) {
+        return
+      }
+      if (cached.complete) {
+        games.clear()
+        startPage = 1
+      }
+    }
+
+    for (let batchStart = startPage; batchStart <= maxRecordPages; batchStart += recordBatchSize) {
       const batchPages = Array.from(
         { length: Math.min(recordBatchSize, maxRecordPages - batchStart + 1) },
         (_, index) => batchStart + index
       )
-      const responses = await Promise.all(batchPages.map(recordPage =>
-        fetchUpstream('/User/getGames', { uid: user.uid, page: recordPage }, signal)
+      const responses = await Promise.allSettled(batchPages.map(recordPage =>
+        fetchRecordPage(user.uid, recordPage, signal)
       ))
       let reachedEnd = false
+      const failedPages = []
 
-      responses.forEach((response, responseIndex) => {
+      responses.forEach((settled, responseIndex) => {
+        if (settled.status === 'rejected') {
+          failedPages.push(batchPages[responseIndex])
+          return
+        }
+        const response = settled.value
         const rows = Array.isArray(response?.data?.data) ? response.data.data : []
         if (!rows.length) reachedEnd = true
         rows.forEach((game, index) => {
@@ -173,15 +272,31 @@ async function selectUser(user) {
         })
       })
 
-      loadingProgress.value = { pages: batchPages.at(-1), records: games.size }
+      const nextPage = failedPages.length ? Math.min(...failedPages) : batchPages.at(-1) + 1
+      loadingProgress.value = { pages: batchPages.at(-1), records: games.size, resumed: loadingProgress.value.resumed }
       result.value = summarizeGames(
         String(user.uid),
         [...games.values()],
         false,
         user
       )
+      await writeQueryCache({
+        userId: String(user.uid),
+        user,
+        games: [...games.values()],
+        nextPage,
+        complete: reachedEnd && !failedPages.length,
+        updatedAt: Date.now()
+      })
 
-      if (reachedEnd) break
+      if (signal.aborted) throw new DOMException('查询已取消', 'AbortError')
+      if (failedPages.length) {
+        throw new Error(`第 ${failedPages.join('、')} 页暂时读取失败，已保存进度；重新选择该用户可继续`)
+      }
+      if (reachedEnd) {
+        completed = true
+        break
+      }
       if (batchPages.at(-1) === maxRecordPages) truncated = true
     }
 
@@ -191,6 +306,16 @@ async function selectUser(user) {
       truncated,
       user
     )
+    if (completed) {
+      await writeQueryCache({
+        userId: String(user.uid),
+        user,
+        games: [...games.values()],
+        nextPage: loadingProgress.value.pages + 1,
+        complete: true,
+        updatedAt: Date.now()
+      })
+    }
   } catch (requestError) {
     if (requestError.name !== 'AbortError') {
       error.value = requestError.message || '无法读取开球网数据，请检查网络后重试'
@@ -337,7 +462,7 @@ function changePage(next) {
       <span class="ball"></span>
       <div>
         <strong>{{ loadingProgress.records ? `已读取 ${loadingProgress.records} 场，继续加载中` : `正在读取 ${keyword} 的战绩` }}</strong>
-        <p>每批完成即展示，无需等待全部记录。</p>
+        <p>{{ loadingProgress.resumed ? `已从缓存恢复，将从第 ${loadingProgress.pages + 1} 页继续` : '每批完成即展示，失败会自动重试并保存进度。' }}</p>
       </div>
     </section>
 
