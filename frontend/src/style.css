@@ -88,6 +88,8 @@ h1 { margin: 20px 0 26px; font-size: 32px; text-align: center; }
 .formula-grid strong { color: var(--blue); font-size: 20px; }
 .annual-note { margin: 12px 0 0; color: #777; font-size: 12px; line-height: 1.7; }
 .annual-rules span { display: block; }
+.annual-rules .rule-tier-grid { margin-top: 4px; display: grid; grid-template-columns: repeat(3, 1fr); column-gap: 7px; line-height: 2; font-size: 10px; font-variant-numeric: tabular-nums; }
+.rule-tier-grid span { overflow: hidden; white-space: nowrap; }
 
 .records { margin-top: 0; padding-top: 14px; }
 .table-wrap { overflow: hidden; border: 1px solid var(--line); background: #fff; }

@@ -532,9 +532,14 @@ function changePage(next) {
           <p class="annual-note annual-rules">
             <span>只统计近一年单打</span>
             <span>掉分35+为大额输分</span>
-            <span>[10,30)盘扣50分</span>
-            <span>[30,120)扣60分</span>
-            <span>以此类推</span>
+            <span class="rule-tier-grid">
+              <span>[10,30)盘 -50分</span>
+              <span>[30,120) -60分</span>
+              <span>[120,240) -70分</span>
+              <span>[240,360) -80分</span>
+              <span>[360,480) -90分</span>
+              <span>480盘及以上 -100分</span>
+            </span>
           </p>
           <p class="annual-note">当前统计 {{ annualAnalysis?.count || 0 }} 场单打，其中 {{ annualAnalysis?.largeLossCount || 0 }} 场大额输分。</p>
         </section>
