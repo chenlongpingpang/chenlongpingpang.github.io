@@ -45,6 +45,10 @@ h1 { margin: 20px 0 26px; font-size: 32px; text-align: center; }
 
 .loading-card { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--line); background: #fff; }
 .loading-card p { margin: 4px 0 0; color: #888; font-size: 12px; }
+.resume-card { margin: 14px 12px 0; padding: 12px; border: 1px solid #efc360; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #fff8df; }
+.resume-card strong { color: #66501b; font-size: 14px; }
+.resume-card p { margin: 4px 0 0; color: #8a743d; font-size: 11px; }
+.resume-card button { flex: none; min-height: 40px; padding: 0 14px; border: 0; color: #fff; background: var(--blue); font-weight: 700; }
 .ball { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--blue); animation: pulse .8s infinite alternate; }
 @keyframes pulse { to { opacity: .35; transform: scale(.72); } }
 

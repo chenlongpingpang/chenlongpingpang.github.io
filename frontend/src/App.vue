@@ -6,13 +6,14 @@ const loading = ref(false)
 const searchingUsers = ref(false)
 const error = ref('')
 const result = ref(null)
+const selectedUser = ref(null)
 const candidates = ref([])
 const candidatesTruncated = ref(false)
 const hasSearchedUsers = ref(false)
 const page = ref(1)
 const statScope = ref('all')
 const annualScoreOpen = ref(false)
-const loadingProgress = ref({ pages: 0, records: 0, resumed: false })
+const loadingProgress = ref({ pages: 0, records: 0, resumed: false, nextPage: 1 })
 const pageSize = 20
 const upstreamBase = (import.meta.env.VITE_KQ_BASE_URL || 'https://kaiqiuwang.cc/xcx/public/index.php/api').replace(/\/$/, '')
 const maxRecordPages = 500
@@ -175,6 +176,7 @@ async function searchUsers() {
   searchingUsers.value = true
   error.value = ''
   result.value = null
+  selectedUser.value = null
   candidates.value = []
   candidatesTruncated.value = false
   hasSearchedUsers.value = false
@@ -207,6 +209,7 @@ async function searchUsers() {
 }
 
 async function selectUser(user) {
+  selectedUser.value = user
   activeRecordController?.abort()
   activeRecordController = new AbortController()
   const { signal } = activeRecordController
@@ -217,7 +220,7 @@ async function selectUser(user) {
   hasSearchedUsers.value = false
   page.value = 1
   statScope.value = 'all'
-  loadingProgress.value = { pages: 0, records: 0, resumed: false }
+  loadingProgress.value = { pages: 0, records: 0, resumed: false, nextPage: 1 }
 
   try {
     const games = new Map()
@@ -234,7 +237,8 @@ async function selectUser(user) {
       loadingProgress.value = {
         pages: Math.max(0, startPage - 1),
         records: games.size,
-        resumed: !cached.complete
+        resumed: !cached.complete,
+        nextPage: startPage
       }
       result.value = summarizeGames(String(user.uid), [...games.values()], false, user)
 
@@ -273,7 +277,12 @@ async function selectUser(user) {
       })
 
       const nextPage = failedPages.length ? Math.min(...failedPages) : batchPages.at(-1) + 1
-      loadingProgress.value = { pages: batchPages.at(-1), records: games.size, resumed: loadingProgress.value.resumed }
+      loadingProgress.value = {
+        pages: batchPages.at(-1),
+        records: games.size,
+        resumed: loadingProgress.value.resumed,
+        nextPage
+      }
       result.value = summarizeGames(
         String(user.uid),
         [...games.values()],
@@ -467,6 +476,14 @@ function changePage(next) {
     </section>
 
     <template v-if="result">
+      <section v-if="error && selectedUser && !loading" class="resume-card">
+        <div>
+          <strong>第 {{ loadingProgress.nextPage }} 页读取失败</strong>
+          <p>已读取的 {{ loadingProgress.records }} 场不会丢失。</p>
+        </div>
+        <button type="button" @click="selectUser(selectedUser)">继续加载</button>
+      </section>
+
       <section class="summary">
         <div class="player">
           <div class="profile-avatar">
