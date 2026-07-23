@@ -1,0 +1,10 @@
+{
+  "name": "开球历史 · 交手战绩",
+  "short_name": "开球历史",
+  "description": "按姓名或昵称查询开球网公开交手战绩",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0aa4df",
+  "lang": "zh-CN"
+}
