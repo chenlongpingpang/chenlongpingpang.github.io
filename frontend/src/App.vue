@@ -67,7 +67,7 @@ const annualAnalysis = computed(() => {
   let peak = peakValues.length ? Math.max(...peakValues) : null
   const maximum = numberValue(result.value.maxScore)
   if (peak !== null && maximum !== null) peak = Math.min(peak, maximum)
-  const largeLosses = reconstructed.filter(row => row.delta !== null && row.delta <= -30)
+  const largeLosses = reconstructed.filter(row => row.delta !== null && row.delta <= -35)
   const ratio = largeLosses.length ? reconstructed.length / largeLosses.length : Infinity
   const coefficient = largeLosses.length === 0 || ratio >= 40 ? 0
     : ratio > 30 ? 0.2 : ratio > 20 ? 0.4 : ratio > 10 ? 0.6 : null
@@ -529,7 +529,13 @@ function changePage(next) {
             <span>官方修正</span><b>{{ annualAnalysis.correction ?? '-' }}</b>
             <span>官网年度积分</span><strong>{{ result.annualScore || '-' }}</strong>
           </div>
-          <p class="annual-note">只统计近一年单打。单场掉分达到 30 分计为大额输分；参赛越少，扣减越多。荣誉、处罚等未公开部分统一计入“官方修正”。</p>
+          <p class="annual-note annual-rules">
+            <span>只统计近一年单打</span>
+            <span>掉分35+为大额输分</span>
+            <span>[10,30)盘扣50分</span>
+            <span>[30,120)扣60分</span>
+            <span>以此类推</span>
+          </p>
           <p class="annual-note">当前统计 {{ annualAnalysis?.count || 0 }} 场单打，其中 {{ annualAnalysis?.largeLossCount || 0 }} 场大额输分。</p>
         </section>
       </div>
