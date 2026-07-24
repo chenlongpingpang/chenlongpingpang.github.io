@@ -88,12 +88,16 @@ const annualAnalysis = computed(() => {
   const peakRecord = reconstructed.find(record => record.after === peak && record.delta >= 0)
     || reconstructed.find(record => record.before === peak)
     || null
+  const recordPositions = new Map(
+    result.value.records.map((record, index) => [record.gameId, index + 1])
+  )
   const peakEventRecords = peakRecord
     ? reconstructed
       .filter(record => peakRecord.eventId
         ? record.eventId === peakRecord.eventId
         : record.date === peakRecord.date)
       .sort((left, right) => Number(left.gameId) - Number(right.gameId))
+      .map(record => ({ ...record, overallIndex: recordPositions.get(record.gameId) || '-' }))
     : []
   return {
     peak,
@@ -572,24 +576,19 @@ function changePage(next) {
           <template v-else-if="annualDetail === 'peak'">
             <button class="dialog-back" type="button" @click="annualDetail = 'overview'">‹ 返回年度积分</button>
             <h2>近一年单打最高</h2>
-            <div v-if="annualAnalysis?.peakEventRecords.length" class="event-score-summary">
-              <div><span>赛前积分</span><b>{{ annualAnalysis.peakEventRecords[0].before }}</b></div>
-              <div><span>赛事最高</span><strong>{{ annualAnalysis.peak }}</strong></div>
-              <div><span>赛后积分</span><b>{{ annualAnalysis.peakEventRecords.at(-1).after }}</b></div>
-            </div>
             <p v-if="annualAnalysis?.peakRecord" class="detail-intro">
-              {{ annualAnalysis.peakRecord.date }} 的同一赛事共 {{ annualAnalysis.peakEventRecords.length }} 场已结算单打。以下按实际比赛顺序展示，蓝色行是积分首次达到最高值的比赛。
+              {{ annualAnalysis.peakRecord.date }} 的同一赛事共 {{ annualAnalysis.peakEventRecords.length }} 场已结算单打。序号对应主页全部战绩，以下按实际比赛顺序展示，蓝色行是积分首次达到最高值的比赛。
             </p>
             <div v-if="annualAnalysis?.peakEventRecords.length" class="table-wrap annual-record-table peak-event-table">
               <table>
                 <thead><tr><th>序号</th><th>我方</th><th>对手</th><th>比分</th><th>变化</th><th>实时积分</th></tr></thead>
                 <tbody>
                   <tr
-                    v-for="(record, index) in annualAnalysis.peakEventRecords"
+                    v-for="record in annualAnalysis.peakEventRecords"
                     :key="record.gameId"
                     :class="{ 'peak-score-row': record.gameId === annualAnalysis.peakRecord.gameId }"
                   >
-                    <td>{{ index + 1 }}</td>
+                    <td>{{ record.overallIndex }}</td>
                     <td>{{ teamName(record.selfName || result.userName, record.teammateName) }}</td>
                     <td>
                       <strong>{{ teamName(record.opponentName, record.opponentTeammateName) }}</strong>
