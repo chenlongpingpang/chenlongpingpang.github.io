@@ -682,7 +682,10 @@ function changePage(next) {
                   :y1="trendChart.height - trendChart.bottom"
                   :y2="trendChart.height - trendChart.bottom + 5"
                 />
-                <text :x="tick.x" :y="trendChart.height - 10" text-anchor="middle">{{ String(tick.date).slice(5) }}</text>
+                <text :x="tick.x" :y="trendChart.height - 19" text-anchor="middle">
+                  <tspan :x="tick.x">{{ String(tick.date).slice(0, 4) }}</tspan>
+                  <tspan :x="tick.x" dy="9">{{ String(tick.date).slice(5) }}</tspan>
+                </text>
               </g>
             </g>
             <g v-if="trendChart.maxPoint !== trendChart.currentPoint" class="trend-mark">
