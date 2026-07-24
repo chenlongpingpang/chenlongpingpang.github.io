@@ -1053,11 +1053,13 @@ function changePage(next) {
                     <td>{{ teamName(record.selfName || result.userName, record.teammateName) }}</td>
                     <td>
                       <strong>{{ teamName(record.opponentName, record.opponentTeammateName) }}</strong>
-                      <small v-if="record.gameId === annualAnalysis.peakRecord.gameId">最高</small>
                     </td>
                     <td><strong class="score">{{ record.scoreLine }}</strong></td>
                     <td>{{ record.scoreChange }}</td>
-                    <td>{{ record.after }}</td>
+                    <td>
+                      {{ record.after }}
+                      <small v-if="record.gameId === annualAnalysis.peakRecord.gameId">最高</small>
+                    </td>
                   </tr>
                 </tbody>
               </table>
