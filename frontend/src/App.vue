@@ -52,7 +52,11 @@ const statRows = computed(() => [
 const annualAnalysis = computed(() => {
   if (!result.value) return null
   const rows = result.value.records
-    .filter(record => !record.doubles && String(record.date || '') >= oneYearCutoff.value)
+    .filter(record =>
+      !record.doubles &&
+      String(record.date || '') >= oneYearCutoff.value &&
+      isSettledScoreChange(record.scoreChange)
+    )
     .sort((left, right) => String(right.date).localeCompare(String(left.date)))
   let running = numberValue(result.value.currentScore)
   const reconstructed = rows.map(record => {
@@ -347,8 +351,14 @@ function buildStatRow(label, records) {
 }
 
 function numberValue(value) {
-  const numeric = Number(String(value ?? '').replace('+', '').trim())
+  const text = String(value ?? '').replace('+', '').trim()
+  if (!text || text === '-') return null
+  const numeric = Number(text)
   return Number.isFinite(numeric) ? numeric : null
+}
+
+function isSettledScoreChange(value) {
+  return numberValue(value) !== null
 }
 
 function avatarUrl(userId) {
@@ -530,7 +540,7 @@ function changePage(next) {
             <span>官网年度积分</span><strong>{{ result.annualScore || '-' }}</strong>
           </div>
           <p class="annual-note annual-rules">
-            <span>只统计近一年单打</span>
+            <span>只统计近一年已结算积分的单打</span>
             <span>掉分35+为大额输分</span>
             <span class="rule-tier-grid">
               <span>[10,30)盘 -50分</span>
@@ -541,7 +551,7 @@ function changePage(next) {
               <span>480盘及以上 -100分</span>
             </span>
           </p>
-          <p class="annual-note">当前统计 {{ annualAnalysis?.count || 0 }} 场单打，其中 {{ annualAnalysis?.largeLossCount || 0 }} 场大额输分。</p>
+          <p class="annual-note">当前统计 {{ annualAnalysis?.count || 0 }} 场单打（已结算积分），其中 {{ annualAnalysis?.largeLossCount || 0 }} 场大额输分。</p>
         </section>
       </div>
 
