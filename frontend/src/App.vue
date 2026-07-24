@@ -88,9 +88,17 @@ const annualAnalysis = computed(() => {
   const peakRecord = reconstructed.find(record => record.after === peak && record.delta >= 0)
     || reconstructed.find(record => record.before === peak)
     || null
+  const peakEventRecords = peakRecord
+    ? reconstructed
+      .filter(record => peakRecord.eventId
+        ? record.eventId === peakRecord.eventId
+        : record.date === peakRecord.date)
+      .sort((left, right) => Number(left.gameId) - Number(right.gameId))
+    : []
   return {
     peak,
     peakRecord,
+    peakEventRecords,
     adjustment,
     deduction,
     correction,
@@ -408,6 +416,7 @@ function summarizeGames(userId, games, truncated, user) {
 
     return {
       gameId: String(game.gameid || ''),
+      eventId: String(game.eventid || ''),
       date: game.dateline || '',
       selfName: selfName || '',
       teammateName: teammateName || '',
@@ -563,23 +572,34 @@ function changePage(next) {
           <template v-else-if="annualDetail === 'peak'">
             <button class="dialog-back" type="button" @click="annualDetail = 'overview'">‹ 返回年度积分</button>
             <h2>近一年单打最高</h2>
-            <p v-if="annualAnalysis?.peakRecord" class="detail-equation">
-              {{ annualAnalysis.peakRecord.before }}
-              {{ annualAnalysis.peakRecord.delta >= 0 ? '+' : '−' }}
-              {{ Math.abs(annualAnalysis.peakRecord.delta) }}
-              = <strong>{{ annualAnalysis.peakRecord.after }}</strong>
+            <div v-if="annualAnalysis?.peakEventRecords.length" class="event-score-summary">
+              <div><span>赛前积分</span><b>{{ annualAnalysis.peakEventRecords[0].before }}</b></div>
+              <div><span>赛事最高</span><strong>{{ annualAnalysis.peak }}</strong></div>
+              <div><span>赛后积分</span><b>{{ annualAnalysis.peakEventRecords.at(-1).after }}</b></div>
+            </div>
+            <p v-if="annualAnalysis?.peakRecord" class="detail-intro">
+              {{ annualAnalysis.peakRecord.date }} 的同一赛事共 {{ annualAnalysis.peakEventRecords.length }} 场已结算单打。以下按实际比赛顺序展示，蓝色行是积分首次达到最高值的比赛。
             </p>
-            <div v-if="annualAnalysis?.peakRecord" class="table-wrap annual-record-table">
+            <div v-if="annualAnalysis?.peakEventRecords.length" class="table-wrap annual-record-table peak-event-table">
               <table>
-                <thead><tr><th>序号</th><th>我方</th><th>敌方</th><th>比分</th><th>变化</th><th>日期</th></tr></thead>
-                <tbody><tr>
-                  <td>1</td>
-                  <td>{{ teamName(annualAnalysis.peakRecord.selfName || result.userName, annualAnalysis.peakRecord.teammateName) }}</td>
-                  <td><strong>{{ teamName(annualAnalysis.peakRecord.opponentName, annualAnalysis.peakRecord.opponentTeammateName) }}</strong></td>
-                  <td><strong class="score">{{ annualAnalysis.peakRecord.scoreLine }}</strong></td>
-                  <td>{{ annualAnalysis.peakRecord.scoreChange }}</td>
-                  <td>{{ annualAnalysis.peakRecord.date }}</td>
-                </tr></tbody>
+                <thead><tr><th>序号</th><th>对手</th><th>比分</th><th>变化</th><th>赛前</th><th>赛后</th></tr></thead>
+                <tbody>
+                  <tr
+                    v-for="(record, index) in annualAnalysis.peakEventRecords"
+                    :key="record.gameId"
+                    :class="{ 'peak-score-row': record.gameId === annualAnalysis.peakRecord.gameId }"
+                  >
+                    <td>{{ index + 1 }}</td>
+                    <td>
+                      <strong>{{ teamName(record.opponentName, record.opponentTeammateName) }}</strong>
+                      <small v-if="record.gameId === annualAnalysis.peakRecord.gameId">最高</small>
+                    </td>
+                    <td><strong class="score">{{ record.scoreLine }}</strong></td>
+                    <td>{{ record.scoreChange }}</td>
+                    <td>{{ record.before }}</td>
+                    <td>{{ record.after }}</td>
+                  </tr>
+                </tbody>
               </table>
             </div>
             <p v-else class="annual-note">当前数据不足，无法定位产生最高积分的比赛。</p>
