@@ -14,6 +14,7 @@ const page = ref(1)
 const statScope = ref('all')
 const annualScoreOpen = ref(false)
 const annualDetail = ref('overview')
+const eventTitles = ref({})
 const loadingProgress = ref({ pages: 0, records: 0, resumed: false, nextPage: 1 })
 const pageSize = 20
 const upstreamBase = (import.meta.env.VITE_KQ_BASE_URL || 'https://kaiqiuwang.cc/xcx/public/index.php/api').replace(/\/$/, '')
@@ -108,7 +109,10 @@ const annualAnalysis = computed(() => {
     correction,
     count,
     largeLossCount: largeLosses.length,
-    largeLosses
+    largeLosses: largeLosses.map(record => ({
+      ...record,
+      overallIndex: recordPositions.get(record.gameId) || '-'
+    }))
   }
 })
 
@@ -191,6 +195,26 @@ async function fetchRecordPage(userId, recordPage, signal) {
     }
   }
   throw lastError
+}
+
+async function showAnnualDetail(detail) {
+  annualDetail.value = detail
+  if (detail !== 'peak') return
+  const eventId = annualAnalysis.value?.peakRecord?.eventId
+  if (!eventId || eventTitles.value[eventId]) return
+  try {
+    const response = await fetchUpstream('/enter/detail', {
+      id: eventId,
+      lat: 34.7466,
+      lng: 113.6254
+    })
+    eventTitles.value = {
+      ...eventTitles.value,
+      [eventId]: response?.data?.detail?.title || `赛事 ${eventId}`
+    }
+  } catch {
+    eventTitles.value = { ...eventTitles.value, [eventId]: `赛事 ${eventId}` }
+  }
 }
 
 async function searchUsers() {
@@ -561,7 +585,7 @@ function changePage(next) {
             <h2>年度积分怎么算？</h2>
             <p class="annual-formula">年度最高 + 大额输分调整 − 参赛扣减 + 官方修正</p>
             <div v-if="annualAnalysis" class="formula-grid">
-              <button class="metric-help" type="button" @click="annualDetail = 'peak'">近一年单打最高 <i>?</i></button>
+              <button class="metric-help" type="button" @click="showAnnualDetail('peak')">近一年单打最高 <i>?</i></button>
               <b>{{ annualAnalysis.peak ?? '-' }}</b>
               <button class="metric-help" type="button" @click="annualDetail = 'loss'">大额输分调整 <i>?</i></button>
               <b>{{ annualAnalysis.adjustment ?? '人工审核' }}</b>
@@ -577,7 +601,8 @@ function changePage(next) {
             <button class="dialog-back" type="button" @click="annualDetail = 'overview'">‹ 返回年度积分</button>
             <h2>近一年单打最高</h2>
             <p v-if="annualAnalysis?.peakRecord" class="detail-intro">
-              {{ annualAnalysis.peakRecord.date }} 的同一赛事共 {{ annualAnalysis.peakEventRecords.length }} 场已结算单打。序号对应主页全部战绩，以下按实际比赛顺序展示，蓝色行是积分首次达到最高值的比赛。
+              <span>比赛日期：{{ annualAnalysis.peakRecord.date }}</span>
+              <span>比赛名称：{{ eventTitles[annualAnalysis.peakRecord.eventId] || '加载中…' }}</span>
             </p>
             <div v-if="annualAnalysis?.peakEventRecords.length" class="table-wrap annual-record-table peak-event-table">
               <table>
@@ -607,13 +632,13 @@ function changePage(next) {
           <template v-else-if="annualDetail === 'loss'">
             <button class="dialog-back" type="button" @click="annualDetail = 'overview'">‹ 返回年度积分</button>
             <h2>大额输分调整</h2>
-            <p class="detail-intro">近一年已结算单打中，单场掉分 35 分及以上计为大额输分。当前找到 {{ annualAnalysis?.largeLossCount || 0 }} 场。</p>
+            <p class="detail-intro">近一年单打掉分 ≥35 的场次</p>
             <div v-if="annualAnalysis?.largeLosses.length" class="table-wrap annual-record-table">
               <table>
                 <thead><tr><th>序号</th><th>我方</th><th>敌方</th><th>比分</th><th>变化</th><th>日期</th></tr></thead>
                 <tbody>
-                  <tr v-for="(record, index) in annualAnalysis.largeLosses" :key="record.gameId">
-                    <td>{{ index + 1 }}</td>
+                  <tr v-for="record in annualAnalysis.largeLosses" :key="record.gameId">
+                    <td>{{ record.overallIndex }}</td>
                     <td>{{ teamName(record.selfName || result.userName, record.teammateName) }}</td>
                     <td><strong>{{ teamName(record.opponentName, record.opponentTeammateName) }}</strong></td>
                     <td><strong class="score">{{ record.scoreLine }}</strong></td>
