@@ -582,7 +582,7 @@ function changePage(next) {
             </p>
             <div v-if="annualAnalysis?.peakEventRecords.length" class="table-wrap annual-record-table peak-event-table">
               <table>
-                <thead><tr><th>序号</th><th>对手</th><th>比分</th><th>变化</th><th>赛前</th><th>赛后</th></tr></thead>
+                <thead><tr><th>序号</th><th>我方</th><th>对手</th><th>比分</th><th>变化</th><th>实时积分</th></tr></thead>
                 <tbody>
                   <tr
                     v-for="(record, index) in annualAnalysis.peakEventRecords"
@@ -590,13 +590,13 @@ function changePage(next) {
                     :class="{ 'peak-score-row': record.gameId === annualAnalysis.peakRecord.gameId }"
                   >
                     <td>{{ index + 1 }}</td>
+                    <td>{{ teamName(record.selfName || result.userName, record.teammateName) }}</td>
                     <td>
                       <strong>{{ teamName(record.opponentName, record.opponentTeammateName) }}</strong>
                       <small v-if="record.gameId === annualAnalysis.peakRecord.gameId">最高</small>
                     </td>
                     <td><strong class="score">{{ record.scoreLine }}</strong></td>
                     <td>{{ record.scoreChange }}</td>
-                    <td>{{ record.before }}</td>
                     <td>{{ record.after }}</td>
                   </tr>
                 </tbody>

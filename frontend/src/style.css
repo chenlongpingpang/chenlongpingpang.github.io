@@ -101,11 +101,11 @@ h1 { margin: 20px 0 26px; font-size: 32px; text-align: center; }
 .annual-record-table { margin-top: 8px; }
 .annual-record-table th, .annual-record-table td { height: 38px; }
 .peak-event-table th:nth-child(1), .peak-event-table td:nth-child(1) { width: 9%; }
-.peak-event-table th:nth-child(2), .peak-event-table td:nth-child(2) { width: 29%; }
-.peak-event-table th:nth-child(3), .peak-event-table td:nth-child(3) { width: 13%; }
-.peak-event-table th:nth-child(4), .peak-event-table td:nth-child(4) { width: 15%; }
-.peak-event-table th:nth-child(5), .peak-event-table td:nth-child(5),
-.peak-event-table th:nth-child(6), .peak-event-table td:nth-child(6) { width: 17%; }
+.peak-event-table th:nth-child(2), .peak-event-table td:nth-child(2) { width: 17%; }
+.peak-event-table th:nth-child(3), .peak-event-table td:nth-child(3) { width: 25%; }
+.peak-event-table th:nth-child(4), .peak-event-table td:nth-child(4) { width: 12%; }
+.peak-event-table th:nth-child(5), .peak-event-table td:nth-child(5) { width: 14%; }
+.peak-event-table th:nth-child(6), .peak-event-table td:nth-child(6) { width: 23%; }
 .peak-event-table td small { display: block; color: var(--blue); font-size: 9px; font-weight: 700; }
 .peak-event-table .peak-score-row { background: #dff4fc; }
 .peak-event-table .peak-score-row td { color: #087fae; font-weight: 700; }
