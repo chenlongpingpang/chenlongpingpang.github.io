@@ -18,18 +18,9 @@ main { width: min(560px, 100%); min-height: 100dvh; margin: 0 auto; padding-bott
 
 .hero { padding: calc(18px + var(--safe-top)) 18px 24px; color: #fff; background: var(--blue); }
 h1 { margin: 20px 0 26px; font-size: 32px; text-align: center; }
-.home-screen { min-height: 100dvh; padding: calc(54px + var(--safe-top)) 18px 40px; color: #fff; background: var(--blue); }
-.home-screen h1 { margin: 18px 0 48px; font-size: 34px; }
-.home-entry { position: relative; width: 100%; min-height: 112px; margin-bottom: 16px; padding: 22px 50px 22px 20px; border: 0; color: #555; background: #fff; text-align: left; }
-.home-entry strong { display: block; color: #333; font-size: 23px; }
-.home-entry span { display: block; margin-top: 9px; color: #888; font-size: 13px; line-height: 1.5; }
-.home-entry i { position: absolute; top: 50%; right: 20px; color: var(--blue); font-size: 36px; font-style: normal; transform: translateY(-52%); }
-.function-hero { position: relative; }
-.function-hero h1 { margin-top: 24px; }
-.back-home { position: absolute; top: calc(12px + var(--safe-top)); left: 10px; min-height: 38px; padding: 0 8px; border: 0; color: #fff; background: transparent; font-size: 14px; }
-.versus-hero { padding-bottom: 22px; text-align: center; }
-.versus-hero h1 { margin-bottom: 8px; }
-.versus-hero p { margin: 0; font-size: 13px; }
+.versus-hero { padding: 24px 12px 7px; text-align: left; }
+.versus-hero h1 { margin: 0 0 7px; color: #444; font-size: 24px; text-align: left; }
+.versus-hero p { margin: 0; color: #888; font-size: 12px; }
 .search { margin-top: 0; }
 .search-row { display: grid; grid-template-columns: minmax(0, 1fr) 74px; }
 .search input, .search button { min-height: 48px; border: 0; border-radius: 0; }
@@ -82,14 +73,7 @@ h1 { margin: 20px 0 26px; font-size: 32px; text-align: center; }
 .probability-bar { height: 12px; overflow: hidden; background: #999; }
 .probability-bar i { display: block; height: 100%; background: var(--blue); }
 .prediction > h3 { margin: 27px 0 8px; color: #555; font-size: 18px; font-weight: 500; }
-.prediction-steps { border-top: 1px solid var(--line); }
-.prediction-steps > div { min-height: 43px; padding: 7px 5px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.prediction-steps span { color: #666; font-size: 13px; }
-.prediction-steps b { color: #444; font-size: 13px; text-align: right; }
-.prediction-steps .prediction-final { background: #e7f6fc; }
-.prediction-steps .prediction-final span, .prediction-steps .prediction-final b { color: #087fab; font-size: 15px; }
-.prediction-formula { margin: 12px 0 0; padding: 11px 7px; color: #fff; background: var(--blue); text-align: center; font-size: 12px; line-height: 1.6; }
-.prediction-note { margin: 8px 0 0; color: #888; font-size: 11px; line-height: 1.7; }
+.prediction-reasoning { margin: 0; padding: 14px 12px; border: 1px solid var(--line); color: #555; background: #f6f6f6; font-size: 13px; line-height: 1.9; }
 .direct-head { margin-top: 25px; }
 .versus-table th:nth-child(1), .versus-table td:nth-child(1) { width: 10%; }
 .versus-table th:nth-child(2), .versus-table td:nth-child(2) { width: 22%; }
