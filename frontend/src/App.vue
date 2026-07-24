@@ -51,6 +51,77 @@ const statRows = computed(() => [
   buildStatRow('单打', scopedRecords.value.filter(record => !record.doubles)),
   buildStatRow('双打', scopedRecords.value.filter(record => record.doubles))
 ])
+const trendChart = computed(() => {
+  if (!result.value) return null
+  const records = scopedRecords.value.filter(record =>
+    !record.doubles && isSettledScoreChange(record.scoreChange)
+  )
+  let running = numberValue(result.value.currentScore)
+  if (running === null || !records.length) return null
+
+  const reversedTrace = records.map(record => {
+    const delta = numberValue(record.scoreChange)
+    const after = running
+    const before = running - delta
+    running = before
+    return { date: record.date, before, after }
+  })
+  const chronological = [...reversedTrace].reverse()
+  const series = [
+    { date: chronological[0].date, score: chronological[0].before },
+    ...chronological.map(record => ({ date: record.date, score: record.after }))
+  ]
+  const width = 360
+  const height = 218
+  const left = 42
+  const right = 30
+  const top = 34
+  const bottom = 34
+  const plotWidth = width - left - right
+  const plotHeight = height - top - bottom
+  const scores = series.map(point => point.score)
+  const rawMin = Math.min(...scores)
+  const rawMax = Math.max(...scores)
+  const yMin = Math.floor((rawMin - 25) / 50) * 50
+  const yMax = Math.ceil((rawMax + 25) / 50) * 50
+  const yRange = Math.max(50, yMax - yMin)
+  const points = series.map((point, index) => ({
+    ...point,
+    x: left + (series.length === 1 ? 0 : index / (series.length - 1)) * plotWidth,
+    y: top + ((yMax - point.score) / yRange) * plotHeight
+  }))
+  const yTicks = Array.from({ length: 5 }, (_, index) => {
+    const value = Math.round(yMax - (yRange * index) / 4)
+    return { value, y: top + (plotHeight * index) / 4 }
+  })
+  const tickIndexes = [...new Set(
+    Array.from({ length: Math.min(5, series.length) }, (_, index) =>
+      Math.round((index * (series.length - 1)) / Math.max(1, Math.min(5, series.length) - 1))
+    )
+  )]
+  const xTicks = tickIndexes.map(index => points[index])
+  const maxPoint = points.find(point => point.score === rawMax)
+  const minPoint = points.find(point => point.score === rawMin)
+  const currentPoint = points.at(-1)
+
+  return {
+    width,
+    height,
+    left,
+    right,
+    top,
+    bottom,
+    plotWidth,
+    plotHeight,
+    points: points.map(point => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' '),
+    yTicks,
+    xTicks,
+    maxPoint,
+    minPoint,
+    currentPoint,
+    recordCount: records.length
+  }
+})
 const annualAnalysis = computed(() => {
   if (!result.value) return null
   const rows = result.value.records
@@ -573,6 +644,60 @@ function changePage(next) {
           <b>{{ row.total }}</b>
           <b class="positive">{{ row.wins }}</b>
           <b class="negative">{{ row.losses }}</b>
+        </div>
+        <div v-if="trendChart" class="score-trend">
+          <div class="trend-heading">
+            <h3>{{ result.userName }}{{ statScope === 'year' ? '近一年' : '全部' }}单打积分趋势</h3>
+            <span>{{ trendChart.recordCount }} 场{{ loading ? ' · 加载中' : '' }}</span>
+          </div>
+          <svg
+            :viewBox="`0 0 ${trendChart.width} ${trendChart.height}`"
+            role="img"
+            :aria-label="`${result.userName}${statScope === 'year' ? '近一年' : '全部'}单打积分趋势`"
+          >
+            <g class="trend-grid">
+              <g v-for="tick in trendChart.yTicks" :key="tick.value">
+                <line
+                  :x1="trendChart.left"
+                  :x2="trendChart.width - trendChart.right"
+                  :y1="tick.y"
+                  :y2="tick.y"
+                />
+                <text :x="trendChart.left - 7" :y="tick.y + 4" text-anchor="end">{{ tick.value }}</text>
+              </g>
+            </g>
+            <line
+              class="trend-axis"
+              :x1="trendChart.left"
+              :x2="trendChart.left"
+              :y1="trendChart.top"
+              :y2="trendChart.height - trendChart.bottom"
+            />
+            <polyline class="trend-line" :points="trendChart.points" />
+            <g class="trend-dates">
+              <g v-for="tick in trendChart.xTicks" :key="`${tick.date}-${tick.x}`">
+                <line
+                  :x1="tick.x"
+                  :x2="tick.x"
+                  :y1="trendChart.height - trendChart.bottom"
+                  :y2="trendChart.height - trendChart.bottom + 5"
+                />
+                <text :x="tick.x" :y="trendChart.height - 10" text-anchor="middle">{{ String(tick.date).slice(5) }}</text>
+              </g>
+            </g>
+            <g v-if="trendChart.maxPoint !== trendChart.currentPoint" class="trend-mark">
+              <circle :cx="trendChart.maxPoint.x" :cy="trendChart.maxPoint.y" r="3" />
+              <text :x="trendChart.maxPoint.x" :y="trendChart.maxPoint.y - 8" text-anchor="middle">{{ trendChart.maxPoint.score }}</text>
+            </g>
+            <g v-if="trendChart.minPoint !== trendChart.currentPoint" class="trend-mark">
+              <circle :cx="trendChart.minPoint.x" :cy="trendChart.minPoint.y" r="3" />
+              <text :x="trendChart.minPoint.x" :y="trendChart.minPoint.y + 15" text-anchor="middle">{{ trendChart.minPoint.score }}</text>
+            </g>
+            <g class="trend-mark current">
+              <circle :cx="trendChart.currentPoint.x" :cy="trendChart.currentPoint.y" r="3" />
+              <text :x="trendChart.currentPoint.x + 6" :y="trendChart.currentPoint.y + 4">{{ trendChart.currentPoint.score }}</text>
+            </g>
+          </svg>
         </div>
         <p class="updated-at">数据更新于 {{ new Date().toLocaleDateString('zh-CN') }}</p>
       </section>

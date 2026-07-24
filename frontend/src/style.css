@@ -75,6 +75,18 @@ h1 { margin: 20px 0 26px; font-size: 32px; text-align: center; }
 .stats-row strong { text-align: left; font-size: 15px; }
 .stats-row b { font-size: 22px; }
 .positive, .negative { color: inherit; }
+.score-trend { margin: 14px 12px 0; padding: 12px 8px 4px; color: #666; background: #fff; }
+.trend-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 0 4px 3px; }
+.trend-heading h3 { margin: 0; overflow: hidden; color: #666; font-size: 15px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.trend-heading span { flex: none; color: #999; font-size: 9px; }
+.score-trend svg { display: block; width: 100%; height: auto; overflow: visible; }
+.trend-grid line { stroke: #d4d4d4; stroke-width: 1; }
+.trend-grid text, .trend-dates text { fill: #777; font-size: 8px; }
+.trend-axis, .trend-dates line { stroke: #888; stroke-width: 1; }
+.trend-line { fill: none; stroke: #079ddd; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.trend-mark circle { fill: #079ddd; }
+.trend-mark text { fill: #079ddd; font-size: 10px; }
+.trend-mark.current text { font-size: 11px; }
 .updated-at { margin: 0; padding: 16px 8px 12px; text-align: center; font-size: 12px; }
 
 .dialog-backdrop { position: fixed; inset: 0; z-index: 20; padding: 18px; display: grid; place-items: center; background: rgba(0,0,0,.48); }
