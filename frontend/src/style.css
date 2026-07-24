@@ -104,9 +104,14 @@ h1 { margin: 20px 0 26px; font-size: 32px; text-align: center; }
 .peak-event-table td small { display: block; color: var(--blue); font-size: 9px; font-weight: 700; }
 .peak-event-table .peak-score-row { background: #dff4fc; }
 .peak-event-table .peak-score-row td { color: #087fae; font-weight: 700; }
-.deduction-grid { border-top: 1px solid var(--line); display: grid; grid-template-columns: 1fr auto; }
-.deduction-grid span, .deduction-grid b { padding: 9px 7px; border-bottom: 1px solid var(--line); }
-.deduction-grid b { min-width: 74px; color: #333; text-align: right; }
+.deduction-axis { width: 100%; margin: 4px 0 15px; padding: 10px 5px 7px; background: #f5f5f5; }
+.deduction-values { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; color: #777; text-align: center; font-size: 10px; font-variant-numeric: tabular-nums; }
+.deduction-values span { padding: 3px 0; border-radius: 10px; }
+.deduction-values span.active { color: #fff; background: var(--blue); font-weight: 700; }
+.deduction-track { height: 18px; margin: 4px 2px 0; border-top: 2px solid #888; display: flex; justify-content: space-between; }
+.deduction-track i { width: 1px; height: 10px; margin-top: -2px; background: #888; }
+.deduction-labels { margin: -5px 0 0; display: flex; justify-content: space-between; color: #666; font-size: 9px; font-variant-numeric: tabular-nums; }
+.deduction-axis > small { display: block; margin-top: 2px; color: #999; text-align: right; font-size: 9px; }
 .annual-note { margin: 12px 0 0; color: #777; font-size: 12px; line-height: 1.7; }
 
 .records { margin-top: 0; padding-top: 14px; }

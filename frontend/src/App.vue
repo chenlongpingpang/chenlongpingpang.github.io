@@ -654,15 +654,26 @@ function changePage(next) {
           <template v-else-if="annualDetail === 'deduction'">
             <button class="dialog-back" type="button" @click="annualDetail = 'overview'">‹ 返回年度积分</button>
             <h2>参赛扣减</h2>
-            <div class="deduction-grid">
-              <span>[10,30)盘</span><b>-50分</b>
-              <span>[30,120)盘</span><b>-60分</b>
-              <span>[120,240)盘</span><b>-70分</b>
-              <span>[240,360)盘</span><b>-80分</b>
-              <span>[360,480)盘</span><b>-90分</b>
-              <span>480盘及以上</span><b>-100分</b>
+            <div class="deduction-axis" aria-label="参赛盘数扣减数轴">
+              <div class="deduction-values">
+                <span :class="{ active: annualAnalysis?.deduction === 0 }">0</span>
+                <span :class="{ active: annualAnalysis?.deduction === 50 }">-50</span>
+                <span :class="{ active: annualAnalysis?.deduction === 60 }">-60</span>
+                <span :class="{ active: annualAnalysis?.deduction === 70 }">-70</span>
+                <span :class="{ active: annualAnalysis?.deduction === 80 }">-80</span>
+                <span :class="{ active: annualAnalysis?.deduction === 90 }">-90</span>
+                <span :class="{ active: annualAnalysis?.deduction === 100 }">-100</span>
+              </div>
+              <div class="deduction-track">
+                <i v-for="tick in 8" :key="tick"></i>
+              </div>
+              <div class="deduction-labels">
+                <span>0</span><span>10</span><span>30</span><span>120</span>
+                <span>240</span><span>360</span><span>480</span><span>+</span>
+              </div>
+              <small>参赛盘数</small>
             </div>
-            <p class="detail-intro">当前统计 {{ annualAnalysis?.count || 0 }} 场单打（已结算积分），参赛扣减为 -{{ annualAnalysis?.deduction || 0 }} 分。</p>
+            <p class="detail-intro">当前统计 {{ annualAnalysis?.count || 0 }} 场单打（已结算积分），参赛扣减为 {{ annualAnalysis?.deduction ? `-${annualAnalysis.deduction}` : 0 }} 分。</p>
           </template>
 
           <template v-else>
