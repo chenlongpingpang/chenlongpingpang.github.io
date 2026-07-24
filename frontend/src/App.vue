@@ -36,6 +36,7 @@ const versusError = ref('')
 const versusGames = ref([])
 const versusRecentGames = ref([])
 const versusProgress = ref({ pages: 0, records: 0, complete: false })
+const predictionTitleClicks = ref(0)
 let versusController = null
 
 function recentAverageScore(user, games, limit = 50) {
@@ -123,6 +124,17 @@ const versusPrediction = computed(() => {
     percentageB: 100 - percentageA
   }
 })
+const dragonSide = computed(() =>
+  versusSelected.value.findIndex(user => String(user?.uid || '') === '350255')
+)
+const dragonOverrideActive = computed(() =>
+  dragonSide.value !== -1 && predictionTitleClicks.value < 7
+)
+const displayedPercentageA = computed(() => {
+  if (dragonOverrideActive.value) return dragonSide.value === 0 ? 100 : 0
+  return versusPrediction.value?.percentageA ?? 0
+})
+const displayedPercentageB = computed(() => 100 - displayedPercentageA.value)
 
 const oneYearCutoff = computed(() => {
   const cutoff = new Date()
@@ -400,6 +412,10 @@ function returnHome() {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
+function revealNormalPrediction() {
+  if (dragonOverrideActive.value) predictionTitleClicks.value += 1
+}
+
 async function searchVersusUser(side) {
   const value = versusKeywords.value[side].trim()
   if (!value || value.length > 30) {
@@ -415,6 +431,7 @@ async function searchVersusUser(side) {
   versusSelected.value = selected
   versusGames.value = []
   versusRecentGames.value = []
+  predictionTitleClicks.value = 0
 
   try {
     const users = new Map()
@@ -453,6 +470,7 @@ function chooseVersusUser(side, user) {
   versusCandidates.value = candidatesBySide
   versusGames.value = []
   versusRecentGames.value = []
+  predictionTitleClicks.value = 0
   versusError.value = ''
   if (selected[0] && selected[1]) loadVersusHistory()
 }
@@ -465,6 +483,7 @@ function resetVersusSide(side) {
   versusSelected.value = selected
   versusGames.value = []
   versusRecentGames.value = []
+  predictionTitleClicks.value = 0
   versusError.value = ''
 }
 
@@ -1228,7 +1247,7 @@ function changePage(next) {
 
       <section v-if="versusPrediction" class="prediction">
         <div class="prediction-title">
-          <h2>预测结果</h2>
+          <button type="button" class="prediction-easter-trigger" @click="revealNormalPrediction">预测结果</button>
           <span>{{ versusLoading ? '加载中' : '统计完成' }}</span>
         </div>
         <div class="probability-names">
@@ -1237,15 +1256,16 @@ function changePage(next) {
           <strong>{{ versusSelected[1].realname || versusSelected[1].username2 }}</strong>
         </div>
         <div class="probability-values">
-          <strong>{{ versusPrediction.percentageA }}%</strong>
-          <strong>{{ versusPrediction.percentageB }}%</strong>
+          <strong>{{ displayedPercentageA }}%</strong>
+          <strong>{{ displayedPercentageB }}%</strong>
         </div>
         <div class="probability-bar">
-          <i :style="{ width: `${versusPrediction.percentageA}%` }"></i>
+          <i :style="{ width: `${displayedPercentageA}%` }"></i>
         </div>
 
         <h3>预测过程</h3>
-        <div class="prediction-steps">
+        <p v-if="dragonOverrideActive" class="dragon-prediction-note">该选手过于强大，因此胜率为100%。</p>
+        <div v-else class="prediction-steps">
           <div>
             <span>① 当前积分</span>
             <b>{{ versusPrediction.scoreA ?? '-' }} : {{ versusPrediction.scoreB ?? '-' }}</b>
