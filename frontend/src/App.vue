@@ -1252,9 +1252,18 @@ function changePage(next) {
             <span>② 近50盘平均积分</span>
             <b>{{ versusPrediction.recentAverageA ?? '-' }} : {{ versusPrediction.recentAverageB ?? '-' }}</b>
           </div>
-          <div>
+          <div class="prediction-match-step">
             <span>③ 历史单打交手</span>
-            <b>{{ versusPrediction.total }} 盘（{{ versusPrediction.winsA }} : {{ versusPrediction.winsB }}）· 局数 {{ versusPrediction.gamesWonA }} : {{ versusPrediction.gamesWonB }}</b>
+            <div class="match-ratios">
+              <span>
+                <small>盘数</small>
+                <b>{{ versusPrediction.winsA }} : {{ versusPrediction.winsB }}</b>
+              </span>
+              <span>
+                <small>局数</small>
+                <b>{{ versusPrediction.gamesWonA }} : {{ versusPrediction.gamesWonB }}</b>
+              </span>
+            </div>
           </div>
           <div>
             <span>④ 历史胜率</span>

@@ -1,7 +1,7 @@
 {
-  "name": "年度积分追溯",
-  "short_name": "积分追溯",
-  "description": "查询选手战绩并追溯年度积分计算",
+  "name": "乒乓助手",
+  "short_name": "乒乓助手",
+  "description": "乒乓球选手战绩、年度积分与双方胜率查询",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#ffffff",
