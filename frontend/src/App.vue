@@ -13,6 +13,7 @@ const hasSearchedUsers = ref(false)
 const page = ref(1)
 const statScope = ref('all')
 const annualScoreOpen = ref(false)
+const annualDetail = ref('overview')
 const loadingProgress = ref({ pages: 0, records: 0, resumed: false, nextPage: 1 })
 const pageSize = 20
 const upstreamBase = (import.meta.env.VITE_KQ_BASE_URL || 'https://kaiqiuwang.cc/xcx/public/index.php/api').replace(/\/$/, '')
@@ -64,7 +65,7 @@ const annualAnalysis = computed(() => {
     const after = running
     const before = running !== null && delta !== null ? running - delta : running
     if (before !== null) running = before
-    return { delta, before, after }
+    return { ...record, delta, before, after }
   })
   const peakValues = reconstructed.flatMap(row => [row.before, row.after]).filter(Number.isFinite)
   if (numberValue(result.value.currentScore) !== null) peakValues.push(numberValue(result.value.currentScore))
@@ -84,7 +85,19 @@ const annualAnalysis = computed(() => {
   const correction = official !== null && peak !== null && adjustment !== null
     ? official - peak - adjustment + deduction
     : null
-  return { peak, adjustment, deduction, correction, count, largeLossCount: largeLosses.length }
+  const peakRecord = reconstructed.find(record => record.after === peak && record.delta >= 0)
+    || reconstructed.find(record => record.before === peak)
+    || null
+  return {
+    peak,
+    peakRecord,
+    adjustment,
+    deduction,
+    correction,
+    count,
+    largeLossCount: largeLosses.length,
+    largeLosses
+  }
 })
 
 watch(statScope, () => {
@@ -505,7 +518,7 @@ function changePage(next) {
         </div>
         <div class="score-overview">
           <div><span>当前积分</span><strong>{{ result.currentScore || '-' }}</strong></div>
-          <button type="button" class="annual-score" @click="annualScoreOpen = true">
+          <button type="button" class="annual-score" @click="annualDetail = 'overview'; annualScoreOpen = true">
             <span>年度积分 <i>?</i></span><strong>{{ result.annualScore || '-' }}</strong>
           </button>
           <div><span>历史最高</span><strong>{{ result.maxScore || '-' }}</strong></div>
@@ -530,28 +543,89 @@ function changePage(next) {
       <div v-if="annualScoreOpen" class="dialog-backdrop" @click.self="annualScoreOpen = false">
         <section class="annual-dialog" role="dialog" aria-modal="true" aria-label="年度积分计算说明">
           <button class="dialog-close" aria-label="关闭" @click="annualScoreOpen = false">×</button>
-          <h2>年度积分怎么算？</h2>
-          <p class="annual-formula">年度最高 + 大额输分调整 − 参赛扣减 + 官方修正</p>
-          <div v-if="annualAnalysis" class="formula-grid">
-            <span>近一年单打最高</span><b>{{ annualAnalysis.peak ?? '-' }}</b>
-            <span>大额输分调整</span><b>{{ annualAnalysis.adjustment ?? '人工审核' }}</b>
-            <span>参赛扣减</span><b>−{{ annualAnalysis.deduction }}</b>
-            <span>官方修正</span><b>{{ annualAnalysis.correction ?? '-' }}</b>
-            <span>官网年度积分</span><strong>{{ result.annualScore || '-' }}</strong>
-          </div>
-          <p class="annual-note annual-rules">
-            <span>只统计近一年已结算积分的单打</span>
-            <span>掉分35+为大额输分</span>
-            <span class="rule-tier-grid">
-              <span>[10,30)盘 -50分</span>
-              <span>[30,120) -60分</span>
-              <span>[120,240) -70分</span>
-              <span>[240,360) -80分</span>
-              <span>[360,480) -90分</span>
-              <span>480盘及以上 -100分</span>
-            </span>
-          </p>
-          <p class="annual-note">当前统计 {{ annualAnalysis?.count || 0 }} 场单打（已结算积分），其中 {{ annualAnalysis?.largeLossCount || 0 }} 场大额输分。</p>
+
+          <template v-if="annualDetail === 'overview'">
+            <h2>年度积分怎么算？</h2>
+            <p class="annual-formula">年度最高 + 大额输分调整 − 参赛扣减 + 官方修正</p>
+            <div v-if="annualAnalysis" class="formula-grid">
+              <button class="metric-help" type="button" @click="annualDetail = 'peak'">近一年单打最高 <i>?</i></button>
+              <b>{{ annualAnalysis.peak ?? '-' }}</b>
+              <button class="metric-help" type="button" @click="annualDetail = 'loss'">大额输分调整 <i>?</i></button>
+              <b>{{ annualAnalysis.adjustment ?? '人工审核' }}</b>
+              <button class="metric-help" type="button" @click="annualDetail = 'deduction'">参赛扣减 <i>?</i></button>
+              <b>−{{ annualAnalysis.deduction }}</b>
+              <button class="metric-help" type="button" @click="annualDetail = 'correction'">官方修正 <i>?</i></button>
+              <b>{{ annualAnalysis.correction ?? '-' }}</b>
+              <span>官网年度积分</span><strong>{{ result.annualScore || '-' }}</strong>
+            </div>
+          </template>
+
+          <template v-else-if="annualDetail === 'peak'">
+            <button class="dialog-back" type="button" @click="annualDetail = 'overview'">‹ 返回年度积分</button>
+            <h2>近一年单打最高</h2>
+            <p v-if="annualAnalysis?.peakRecord" class="detail-equation">
+              {{ annualAnalysis.peakRecord.before }}
+              {{ annualAnalysis.peakRecord.delta >= 0 ? '+' : '−' }}
+              {{ Math.abs(annualAnalysis.peakRecord.delta) }}
+              = <strong>{{ annualAnalysis.peakRecord.after }}</strong>
+            </p>
+            <div v-if="annualAnalysis?.peakRecord" class="table-wrap annual-record-table">
+              <table>
+                <thead><tr><th>序号</th><th>我方</th><th>敌方</th><th>比分</th><th>变化</th><th>日期</th></tr></thead>
+                <tbody><tr>
+                  <td>1</td>
+                  <td>{{ teamName(annualAnalysis.peakRecord.selfName || result.userName, annualAnalysis.peakRecord.teammateName) }}</td>
+                  <td><strong>{{ teamName(annualAnalysis.peakRecord.opponentName, annualAnalysis.peakRecord.opponentTeammateName) }}</strong></td>
+                  <td><strong class="score">{{ annualAnalysis.peakRecord.scoreLine }}</strong></td>
+                  <td>{{ annualAnalysis.peakRecord.scoreChange }}</td>
+                  <td>{{ annualAnalysis.peakRecord.date }}</td>
+                </tr></tbody>
+              </table>
+            </div>
+            <p v-else class="annual-note">当前数据不足，无法定位产生最高积分的比赛。</p>
+          </template>
+
+          <template v-else-if="annualDetail === 'loss'">
+            <button class="dialog-back" type="button" @click="annualDetail = 'overview'">‹ 返回年度积分</button>
+            <h2>大额输分调整</h2>
+            <p class="detail-intro">近一年已结算单打中，单场掉分 35 分及以上计为大额输分。当前找到 {{ annualAnalysis?.largeLossCount || 0 }} 场。</p>
+            <div v-if="annualAnalysis?.largeLosses.length" class="table-wrap annual-record-table">
+              <table>
+                <thead><tr><th>序号</th><th>我方</th><th>敌方</th><th>比分</th><th>变化</th><th>日期</th></tr></thead>
+                <tbody>
+                  <tr v-for="(record, index) in annualAnalysis.largeLosses" :key="record.gameId">
+                    <td>{{ index + 1 }}</td>
+                    <td>{{ teamName(record.selfName || result.userName, record.teammateName) }}</td>
+                    <td><strong>{{ teamName(record.opponentName, record.opponentTeammateName) }}</strong></td>
+                    <td><strong class="score">{{ record.scoreLine }}</strong></td>
+                    <td>{{ record.scoreChange }}</td>
+                    <td>{{ record.date }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p v-else class="annual-note">当前没有大额输分比赛。</p>
+          </template>
+
+          <template v-else-if="annualDetail === 'deduction'">
+            <button class="dialog-back" type="button" @click="annualDetail = 'overview'">‹ 返回年度积分</button>
+            <h2>参赛扣减</h2>
+            <div class="deduction-grid">
+              <span>[10,30)盘</span><b>-50分</b>
+              <span>[30,120)盘</span><b>-60分</b>
+              <span>[120,240)盘</span><b>-70分</b>
+              <span>[240,360)盘</span><b>-80分</b>
+              <span>[360,480)盘</span><b>-90分</b>
+              <span>480盘及以上</span><b>-100分</b>
+            </div>
+            <p class="detail-intro">当前统计 {{ annualAnalysis?.count || 0 }} 场单打（已结算积分），参赛扣减为 -{{ annualAnalysis?.deduction || 0 }} 分。</p>
+          </template>
+
+          <template v-else>
+            <button class="dialog-back" type="button" @click="annualDetail = 'overview'">‹ 返回年度积分</button>
+            <h2>官方修正</h2>
+            <p class="detail-intro">根据获得荣誉、惩罚等情况调整，具体规则未知。本界面采用反推的形式，根据官网年度积分与其他已知项目的差额计算官方修正。</p>
+          </template>
         </section>
       </div>
 
