@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 
+const appMode = ref('home')
 const keyword = ref('')
 const loading = ref(false)
 const searchingUsers = ref(false)
@@ -25,6 +26,74 @@ const recordRetryAttempts = 3
 const completeCacheLifetime = 6 * 60 * 60 * 1000
 let activeRecordController = null
 let cacheDatabasePromise = null
+
+const versusKeywords = ref(['', ''])
+const versusCandidates = ref([[], []])
+const versusSelected = ref([null, null])
+const versusSearching = ref([false, false])
+const versusLoading = ref(false)
+const versusError = ref('')
+const versusGames = ref([])
+const versusProgress = ref({ pages: 0, records: 0, complete: false })
+let versusController = null
+
+const versusPrediction = computed(() => {
+  const [playerA, playerB] = versusSelected.value
+  if (!playerA || !playerB) return null
+  const uidA = String(playerA.uid)
+  const uidB = String(playerB.uid)
+  const directGames = versusGames.value.filter(game => {
+    const left = [game.uid1, game.uid11].map(String)
+    const right = [game.uid2, game.uid22].map(String)
+    const doubles = (game.uid11 && String(game.uid11) !== '0')
+      || (game.uid22 && String(game.uid22) !== '0')
+    return !doubles && (
+      (left.includes(uidA) && right.includes(uidB))
+      || (left.includes(uidB) && right.includes(uidA))
+    )
+  })
+  let winsA = 0
+  let winsB = 0
+  const records = directGames.map(game => {
+    const aOnLeft = String(game.uid1) === uidA
+    const scoreA = Number(aOnLeft ? game.result1 : game.result2) || 0
+    const scoreB = Number(aOnLeft ? game.result2 : game.result1) || 0
+    if (scoreA > scoreB) winsA += 1
+    else if (scoreB > scoreA) winsB += 1
+    return {
+      gameId: String(game.gameid || ''),
+      date: game.dateline || '',
+      playerA: playerName(aOnLeft ? game.username1 : game.username2) || playerA.realname || playerA.username2,
+      playerB: playerName(aOnLeft ? game.username2 : game.username1) || playerB.realname || playerB.username2,
+      scoreLine: `${scoreA}:${scoreB}`,
+      winner: scoreA > scoreB ? 'A' : scoreA < scoreB ? 'B' : ''
+    }
+  })
+  const total = records.length
+  const scoreA = numberValue(playerA.score)
+  const scoreB = numberValue(playerB.score)
+  const ratingProbabilityA = scoreA !== null && scoreB !== null
+    ? 1 / (1 + 10 ** ((scoreB - scoreA) / 400))
+    : 0.5
+  const historyProbabilityA = total ? winsA / total : ratingProbabilityA
+  const historyWeight = total / (total + 10)
+  const finalA = ratingProbabilityA * (1 - historyWeight) + historyProbabilityA * historyWeight
+  const percentageA = Math.round(finalA * 100)
+
+  return {
+    records,
+    total,
+    winsA,
+    winsB,
+    scoreA,
+    scoreB,
+    ratingProbabilityA,
+    historyProbabilityA,
+    historyWeight,
+    percentageA,
+    percentageB: 100 - percentageA
+  }
+})
 
 const oneYearCutoff = computed(() => {
   const cutoff = new Date()
@@ -285,6 +354,170 @@ async function showAnnualDetail(detail) {
     }
   } catch {
     eventTitles.value = { ...eventTitles.value, [eventId]: `赛事 ${eventId}` }
+  }
+}
+
+function enterMode(mode) {
+  appMode.value = mode
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function returnHome() {
+  activeRecordController?.abort()
+  versusController?.abort()
+  loading.value = false
+  versusLoading.value = false
+  appMode.value = 'home'
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+async function searchVersusUser(side) {
+  const value = versusKeywords.value[side].trim()
+  if (!value || value.length > 30) {
+    versusError.value = '请输入 1 到 30 个字符的姓名或昵称'
+    return
+  }
+  const searching = [...versusSearching.value]
+  searching[side] = true
+  versusSearching.value = searching
+  versusError.value = ''
+  const selected = [...versusSelected.value]
+  selected[side] = null
+  versusSelected.value = selected
+  versusGames.value = []
+
+  try {
+    const users = new Map()
+    for (let searchPage = 1; users.size < maxCandidates; searchPage += 1) {
+      const response = await fetchUpstream('/user/lists', { key: value, page: searchPage })
+      const rows = Array.isArray(response?.data?.data) ? response.data.data : []
+      rows.forEach(user => {
+        if (user?.uid && users.size < maxCandidates) users.set(String(user.uid), user)
+      })
+      const lastPage = Number(response?.data?.last_page || searchPage)
+      if (!rows.length || searchPage >= lastPage) break
+    }
+    const candidatesBySide = [...versusCandidates.value]
+    candidatesBySide[side] = [...users.values()]
+    versusCandidates.value = candidatesBySide
+  } catch (requestError) {
+    versusError.value = requestError.message || '无法读取选手信息，请稍后重试'
+  } finally {
+    const finished = [...versusSearching.value]
+    finished[side] = false
+    versusSearching.value = finished
+  }
+}
+
+function chooseVersusUser(side, user) {
+  const other = versusSelected.value[side === 0 ? 1 : 0]
+  if (other && String(other.uid) === String(user.uid)) {
+    versusError.value = '请选择两名不同的选手'
+    return
+  }
+  const selected = [...versusSelected.value]
+  selected[side] = user
+  versusSelected.value = selected
+  const candidatesBySide = [...versusCandidates.value]
+  candidatesBySide[side] = []
+  versusCandidates.value = candidatesBySide
+  versusGames.value = []
+  versusError.value = ''
+  if (selected[0] && selected[1]) loadVersusHistory()
+}
+
+function resetVersusSide(side) {
+  versusController?.abort()
+  versusLoading.value = false
+  const selected = [...versusSelected.value]
+  selected[side] = null
+  versusSelected.value = selected
+  versusGames.value = []
+  versusError.value = ''
+}
+
+async function loadVersusHistory() {
+  const sourceUser = versusSelected.value[0]
+  if (!sourceUser || !versusSelected.value[1]) return
+  versusController?.abort()
+  versusController = new AbortController()
+  const { signal } = versusController
+  const games = new Map()
+  let startPage = 1
+  versusLoading.value = true
+  versusError.value = ''
+  versusProgress.value = { pages: 0, records: 0, complete: false }
+
+  try {
+    const cached = await readQueryCache(sourceUser.uid)
+    if (cached?.games?.length) {
+      cached.games.forEach((game, index) => {
+        games.set(String(game.gameid || `cached-${index}`), game)
+      })
+      versusGames.value = [...games.values()]
+      startPage = cached.complete ? maxRecordPages + 1 : Math.max(1, Number(cached.nextPage) || 1)
+      versusProgress.value = {
+        pages: Math.max(0, startPage - 1),
+        records: games.size,
+        complete: Boolean(cached.complete)
+      }
+      if (cached.complete && Date.now() - Number(cached.updatedAt || 0) < completeCacheLifetime) return
+      if (cached.complete) {
+        games.clear()
+        startPage = 1
+      }
+    }
+
+    for (let batchStart = startPage; batchStart <= maxRecordPages; batchStart += recordBatchSize) {
+      const batchPages = Array.from(
+        { length: Math.min(recordBatchSize, maxRecordPages - batchStart + 1) },
+        (_, index) => batchStart + index
+      )
+      const responses = await Promise.allSettled(
+        batchPages.map(recordPage => fetchRecordPage(sourceUser.uid, recordPage, signal))
+      )
+      let reachedEnd = false
+      const failedPages = []
+      responses.forEach((settled, index) => {
+        if (settled.status === 'rejected') {
+          failedPages.push(batchPages[index])
+          return
+        }
+        const rows = Array.isArray(settled.value?.data?.data) ? settled.value.data.data : []
+        if (!rows.length) reachedEnd = true
+        rows.forEach((game, rowIndex) => {
+          games.set(String(game.gameid || `${batchPages[index]}-${rowIndex}`), game)
+        })
+      })
+      const nextPage = failedPages.length ? Math.min(...failedPages) : batchPages.at(-1) + 1
+      versusGames.value = [...games.values()]
+      versusProgress.value = {
+        pages: batchPages.at(-1),
+        records: games.size,
+        complete: reachedEnd && !failedPages.length
+      }
+      await writeQueryCache({
+        userId: String(sourceUser.uid),
+        user: sourceUser,
+        games: [...games.values()],
+        nextPage,
+        complete: reachedEnd && !failedPages.length,
+        updatedAt: Date.now()
+      })
+      if (failedPages.length) {
+        throw new Error(`第 ${failedPages.join('、')} 页读取失败，已保存进度，可点击继续读取`)
+      }
+      if (reachedEnd) break
+    }
+  } catch (requestError) {
+    if (requestError.name !== 'AbortError') {
+      versusError.value = requestError.message || '读取历史战绩失败，请稍后重试'
+    }
+  } finally {
+    if (versusController?.signal === signal) {
+      versusLoading.value = false
+      versusController = null
+    }
   }
 }
 
@@ -560,19 +793,35 @@ function changePage(next) {
 
 <template>
   <main>
-    <section class="hero">
-      <h1>查询选手战绩</h1>
-
-      <form class="search" @submit.prevent="searchUsers">
-        <div class="search-row">
-          <input id="keyword" v-model="keyword" type="search" autocomplete="off" placeholder="请输入姓名或昵称" :disabled="searchingUsers">
-          <button :disabled="searchingUsers">{{ searchingUsers ? '搜索中…' : '查询' }}</button>
-        </div>
-        <p v-if="error" class="error">{{ error }}</p>
-      </form>
+    <section v-if="appMode === 'home'" class="home-screen">
+      <h1>年度积分追溯</h1>
+      <button class="home-entry" type="button" @click="enterMode('single')">
+        <strong>查询选手战绩</strong>
+        <span>查看个人场次、积分趋势与年度积分</span>
+        <i>›</i>
+      </button>
+      <button class="home-entry" type="button" @click="enterMode('versus')">
+        <strong>双方胜率预测</strong>
+        <span>根据当前积分与历史交手估算单打胜率</span>
+        <i>›</i>
+      </button>
     </section>
 
-    <section v-if="candidates.length" class="candidates">
+    <template v-else-if="appMode === 'single'">
+      <section class="hero function-hero">
+        <button class="back-home" type="button" @click="returnHome">‹ 返回</button>
+        <h1>查询选手战绩</h1>
+
+        <form class="search" @submit.prevent="searchUsers">
+          <div class="search-row">
+            <input id="keyword" v-model="keyword" type="search" autocomplete="off" placeholder="请输入姓名或昵称" :disabled="searchingUsers">
+            <button :disabled="searchingUsers">{{ searchingUsers ? '搜索中…' : '查询' }}</button>
+          </div>
+          <p v-if="error" class="error">{{ error }}</p>
+        </form>
+      </section>
+
+      <section v-if="candidates.length" class="candidates">
       <div class="section-head candidate-head">
         <h2>选择选手</h2>
         <span>找到 {{ candidates.length }} 位</span>
@@ -592,21 +841,21 @@ function changePage(next) {
         </button>
       </div>
       <p v-if="candidatesTruncated" class="candidate-tip">结果较多，仅展示前 50 位，请输入更完整的姓名或昵称缩小范围。</p>
-    </section>
+      </section>
 
-    <section v-else-if="hasSearchedUsers && !searchingUsers && !result && !error" class="empty candidates-empty">
+      <section v-else-if="hasSearchedUsers && !searchingUsers && !result && !error" class="empty candidates-empty">
       没有找到匹配的选手，请尝试其他姓名或昵称
-    </section>
+      </section>
 
-    <section v-if="loading" class="loading-card">
+      <section v-if="loading" class="loading-card">
       <span class="ball"></span>
       <div>
         <strong>{{ loadingProgress.records ? `已读取 ${loadingProgress.records} 场，继续加载中` : `正在读取 ${keyword} 的战绩` }}</strong>
         <p>{{ loadingProgress.resumed ? `已从缓存恢复，将从第 ${loadingProgress.pages + 1} 页继续` : '每批完成即展示，失败会自动重试并保存进度。' }}</p>
       </div>
-    </section>
+      </section>
 
-    <template v-if="result">
+      <template v-if="result">
       <section v-if="error && selectedUser && !loading" class="resume-card">
         <div>
           <strong>第 {{ loadingProgress.nextPage }} 页读取失败</strong>
@@ -842,6 +1091,152 @@ function changePage(next) {
           <span>{{ page }} / {{ totalPages }}</span>
           <button :disabled="page === totalPages" @click="changePage(page + 1)">下一页</button>
         </div>
+      </section>
+    </template>
+    </template>
+
+    <template v-else>
+      <section class="hero function-hero versus-hero">
+        <button class="back-home" type="button" @click="returnHome">‹ 返回</button>
+        <h1>双方胜率预测</h1>
+        <p>输入两名选手，预测单打胜率</p>
+      </section>
+
+      <section class="versus-selectors">
+        <div v-for="side in [0, 1]" :key="side" class="versus-side">
+          <div class="versus-side-title">
+            <b>{{ side === 0 ? '选手 A' : '选手 B' }}</b>
+            <button
+              v-if="versusSelected[side]"
+              type="button"
+              @click="resetVersusSide(side)"
+            >重选</button>
+          </div>
+          <div v-if="versusSelected[side]" class="selected-player">
+            <span class="avatar">
+              <span>{{ (versusSelected[side].realname || versusSelected[side].username2 || '?').slice(0, 1) }}</span>
+              <img :src="avatarUrl(versusSelected[side].uid)" alt="" @error="$event.currentTarget.style.display = 'none'">
+            </span>
+            <span>
+              <strong>{{ versusSelected[side].realname || '未填写姓名' }}</strong>
+              <small>{{ versusSelected[side].username2 || '未填写昵称' }} · {{ versusSelected[side].score || '-' }} 分</small>
+            </span>
+          </div>
+          <form v-else class="search versus-search" @submit.prevent="searchVersusUser(side)">
+            <div class="search-row">
+              <input
+                v-model="versusKeywords[side]"
+                type="search"
+                autocomplete="off"
+                placeholder="输入姓名或昵称"
+                :disabled="versusSearching[side]"
+              >
+              <button :disabled="versusSearching[side]">{{ versusSearching[side] ? '搜索中' : '查询' }}</button>
+            </div>
+          </form>
+          <div v-if="versusCandidates[side].length" class="candidate-grid compact-candidates">
+            <button
+              v-for="user in versusCandidates[side]"
+              :key="user.uid"
+              class="candidate"
+              type="button"
+              @click="chooseVersusUser(side, user)"
+            >
+              <span class="avatar">
+                <span>{{ (user.realname || user.username2 || '?').slice(0, 1) }}</span>
+                <img :src="avatarUrl(user.uid)" alt="" @error="$event.currentTarget.style.display = 'none'">
+              </span>
+              <span class="candidate-info">
+                <strong>{{ user.realname || '未填写姓名' }}</strong>
+                <small>{{ user.username2 || '未填写昵称' }} · ID {{ user.uid }}</small>
+              </span>
+              <span class="candidate-score">{{ user.score || '-' }}<small>积分</small></span>
+            </button>
+          </div>
+        </div>
+        <p v-if="versusError" class="error versus-error">{{ versusError }}</p>
+      </section>
+
+      <section v-if="versusLoading" class="loading-card">
+        <span class="ball"></span>
+        <div>
+          <strong>已读取 {{ versusProgress.records }} 场，正在查找直接交手</strong>
+          <p>预测结果会随着历史数据加载动态更新</p>
+        </div>
+      </section>
+
+      <section v-if="versusPrediction" class="prediction">
+        <div class="prediction-title">
+          <h2>预测结果</h2>
+          <span>{{ versusLoading ? '加载中' : '统计完成' }}</span>
+        </div>
+        <div class="probability-names">
+          <strong>{{ versusSelected[0].realname || versusSelected[0].username2 }}</strong>
+          <b>VS</b>
+          <strong>{{ versusSelected[1].realname || versusSelected[1].username2 }}</strong>
+        </div>
+        <div class="probability-values">
+          <strong>{{ versusPrediction.percentageA }}%</strong>
+          <strong>{{ versusPrediction.percentageB }}%</strong>
+        </div>
+        <div class="probability-bar">
+          <i :style="{ width: `${versusPrediction.percentageA}%` }"></i>
+        </div>
+
+        <h3>预测过程</h3>
+        <div class="prediction-steps">
+          <div>
+            <span>① 当前积分</span>
+            <b>{{ versusPrediction.scoreA ?? '-' }} : {{ versusPrediction.scoreB ?? '-' }}</b>
+          </div>
+          <div>
+            <span>② 积分基础胜率</span>
+            <b>{{ Math.round(versusPrediction.ratingProbabilityA * 100) }}% : {{ 100 - Math.round(versusPrediction.ratingProbabilityA * 100) }}%</b>
+          </div>
+          <div>
+            <span>③ 历史单打交手</span>
+            <b>{{ versusPrediction.total }} 场（{{ versusPrediction.winsA }} : {{ versusPrediction.winsB }}）</b>
+          </div>
+          <div>
+            <span>④ 历史胜率</span>
+            <b v-if="versusPrediction.total">{{ Math.round(versusPrediction.historyProbabilityA * 100) }}% : {{ 100 - Math.round(versusPrediction.historyProbabilityA * 100) }}%</b>
+            <b v-else>暂无交手，暂不修正</b>
+          </div>
+          <div>
+            <span>⑤ 历史数据权重</span>
+            <b>{{ Math.round(versusPrediction.historyWeight * 100) }}%</b>
+          </div>
+          <div class="prediction-final">
+            <span>最终参考胜率</span>
+            <b>{{ versusPrediction.percentageA }}% : {{ versusPrediction.percentageB }}%</b>
+          </div>
+        </div>
+        <p class="prediction-formula">
+          积分基础胜率 × {{ 100 - Math.round(versusPrediction.historyWeight * 100) }}%
+          ＋ 历史胜率 × {{ Math.round(versusPrediction.historyWeight * 100) }}%
+        </p>
+        <p class="prediction-note">历史权重 = 交手场次 ÷（交手场次 + 10）。交手越多，历史结果影响越大；本结果仅供参考，并非官方预测。</p>
+
+        <div class="section-head direct-head">
+          <h2>历史单打交手</h2>
+          <span>共 {{ versusPrediction.total }} 场</span>
+        </div>
+        <div v-if="versusPrediction.records.length" class="table-wrap versus-table">
+          <table>
+            <thead><tr><th>序号</th><th>选手 A</th><th>选手 B</th><th>比分</th><th>日期</th></tr></thead>
+            <tbody>
+              <tr v-for="(record, index) in versusPrediction.records" :key="record.gameId">
+                <td>{{ index + 1 }}</td>
+                <td :class="{ winner: record.winner === 'A' }">{{ record.playerA }}</td>
+                <td :class="{ winner: record.winner === 'B' }">{{ record.playerB }}</td>
+                <td><strong>{{ record.scoreLine }}</strong></td>
+                <td>{{ record.date || '-' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div v-else class="empty">当前没有查询到双方直接单打记录</div>
+        <button v-if="versusError && !versusLoading" class="continue-button" type="button" @click="loadVersusHistory">继续读取</button>
       </section>
     </template>
   </main>

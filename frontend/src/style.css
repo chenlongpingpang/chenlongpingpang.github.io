@@ -18,6 +18,18 @@ main { width: min(560px, 100%); min-height: 100dvh; margin: 0 auto; padding-bott
 
 .hero { padding: calc(18px + var(--safe-top)) 18px 24px; color: #fff; background: var(--blue); }
 h1 { margin: 20px 0 26px; font-size: 32px; text-align: center; }
+.home-screen { min-height: 100dvh; padding: calc(54px + var(--safe-top)) 18px 40px; color: #fff; background: var(--blue); }
+.home-screen h1 { margin: 18px 0 48px; font-size: 34px; }
+.home-entry { position: relative; width: 100%; min-height: 112px; margin-bottom: 16px; padding: 22px 50px 22px 20px; border: 0; color: #555; background: #fff; text-align: left; }
+.home-entry strong { display: block; color: #333; font-size: 23px; }
+.home-entry span { display: block; margin-top: 9px; color: #888; font-size: 13px; line-height: 1.5; }
+.home-entry i { position: absolute; top: 50%; right: 20px; color: var(--blue); font-size: 36px; font-style: normal; transform: translateY(-52%); }
+.function-hero { position: relative; }
+.function-hero h1 { margin-top: 24px; }
+.back-home { position: absolute; top: calc(12px + var(--safe-top)); left: 10px; min-height: 38px; padding: 0 8px; border: 0; color: #fff; background: transparent; font-size: 14px; }
+.versus-hero { padding-bottom: 22px; text-align: center; }
+.versus-hero h1 { margin-bottom: 8px; }
+.versus-hero p { margin: 0; font-size: 13px; }
 .search { margin-top: 0; }
 .search-row { display: grid; grid-template-columns: minmax(0, 1fr) 74px; }
 .search input, .search button { min-height: 48px; border: 0; border-radius: 0; }
@@ -42,6 +54,50 @@ h1 { margin: 20px 0 26px; font-size: 32px; text-align: center; }
 .candidate-score { color: var(--blue); font-size: 18px; font-weight: 700; text-align: right; }
 .candidate-score small { display: block; color: #999; font-size: 10px; font-weight: 400; }
 .candidate-tip, .warning { padding: 10px; color: #8b6914; background: #fff6d8; font-size: 12px; line-height: 1.6; }
+
+.versus-selectors { margin: 16px 12px 0; }
+.versus-side { margin-bottom: 15px; border: 1px solid var(--line); }
+.versus-side-title { min-height: 40px; padding: 0 11px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; background: #eee; }
+.versus-side-title b { color: #555; font-size: 14px; }
+.versus-side-title button { padding: 5px; border: 0; color: var(--blue); background: transparent; font-size: 12px; }
+.versus-search { padding: 11px; }
+.selected-player { min-height: 76px; padding: 10px 12px; display: flex; align-items: center; gap: 12px; }
+.selected-player > span:last-child { min-width: 0; display: grid; gap: 5px; }
+.selected-player strong { overflow: hidden; color: #333; font-size: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.selected-player small { color: #888; font-size: 12px; }
+.compact-candidates { max-height: 310px; overflow-y: auto; border-top: 1px solid var(--line); }
+.compact-candidates .candidate:last-child { border-bottom: 0; }
+.versus-error { margin: 0 0 15px; }
+
+.prediction { margin: 16px 12px 0; }
+.prediction-title { display: flex; align-items: center; justify-content: space-between; }
+.prediction-title h2 { margin: 0; color: #444; font-size: 22px; font-weight: 500; }
+.prediction-title span { color: #888; font-size: 12px; }
+.probability-names { margin-top: 20px; display: grid; grid-template-columns: 1fr 42px 1fr; align-items: center; text-align: center; }
+.probability-names strong { overflow: hidden; color: #444; font-size: 17px; text-overflow: ellipsis; white-space: nowrap; }
+.probability-names b { color: #999; font-size: 12px; }
+.probability-values { margin-top: 8px; display: flex; justify-content: space-between; }
+.probability-values strong { color: var(--blue); font-size: 38px; }
+.probability-values strong:last-child { color: #777; }
+.probability-bar { height: 12px; overflow: hidden; background: #999; }
+.probability-bar i { display: block; height: 100%; background: var(--blue); }
+.prediction > h3 { margin: 27px 0 8px; color: #555; font-size: 18px; font-weight: 500; }
+.prediction-steps { border-top: 1px solid var(--line); }
+.prediction-steps > div { min-height: 43px; padding: 7px 5px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.prediction-steps span { color: #666; font-size: 13px; }
+.prediction-steps b { color: #444; font-size: 13px; text-align: right; }
+.prediction-steps .prediction-final { background: #e7f6fc; }
+.prediction-steps .prediction-final span, .prediction-steps .prediction-final b { color: #087fab; font-size: 15px; }
+.prediction-formula { margin: 12px 0 0; padding: 11px 7px; color: #fff; background: var(--blue); text-align: center; font-size: 12px; line-height: 1.6; }
+.prediction-note { margin: 8px 0 0; color: #888; font-size: 11px; line-height: 1.7; }
+.direct-head { margin-top: 25px; }
+.versus-table th:nth-child(1), .versus-table td:nth-child(1) { width: 10%; }
+.versus-table th:nth-child(2), .versus-table td:nth-child(2) { width: 22%; }
+.versus-table th:nth-child(3), .versus-table td:nth-child(3) { width: 22%; }
+.versus-table th:nth-child(4), .versus-table td:nth-child(4) { width: 15%; }
+.versus-table th:nth-child(5), .versus-table td:nth-child(5) { width: 31%; }
+.versus-table .winner { color: var(--blue); font-weight: 700; }
+.continue-button { width: 100%; min-height: 44px; margin-top: 10px; border: 0; color: #fff; background: var(--blue); font-weight: 700; }
 
 .loading-card { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--line); background: #fff; }
 .loading-card p { margin: 4px 0 0; color: #888; font-size: 12px; }
