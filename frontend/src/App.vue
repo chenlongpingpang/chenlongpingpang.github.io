@@ -39,6 +39,81 @@ const versusProgress = ref({ pages: 0, records: 0, complete: false })
 const predictionTitleClicks = ref(0)
 let versusController = null
 
+const calculatorStartScore = ref('')
+const calculatorOpponents = ref([{ score: '', outcome: 'win' }])
+const calculatorRows = ref([])
+const calculatorError = ref('')
+
+function addCalculatorOpponent() {
+  calculatorOpponents.value.push({ score: '', outcome: 'win' })
+  calculatorRows.value = []
+  calculatorError.value = ''
+}
+
+function removeCalculatorOpponent(index) {
+  if (calculatorOpponents.value.length === 1) {
+    calculatorOpponents.value[0] = { score: '', outcome: 'win' }
+  } else {
+    calculatorOpponents.value.splice(index, 1)
+  }
+  calculatorRows.value = []
+  calculatorError.value = ''
+}
+
+function pointsByRatingGap(gap) {
+  if (gap <= 12) return { expected: 8, upset: 8 }
+  if (gap <= 37) return { expected: 7, upset: 10 }
+  if (gap <= 62) return { expected: 6, upset: 13 }
+  if (gap <= 87) return { expected: 5, upset: 16 }
+  if (gap <= 112) return { expected: 4, upset: 20 }
+  if (gap <= 137) return { expected: 3, upset: 25 }
+  if (gap <= 162) return { expected: 2, upset: 30 }
+  if (gap <= 187) return { expected: 2, upset: 35 }
+  if (gap <= 212) return { expected: 1, upset: 40 }
+  if (gap <= 237) return { expected: 1, upset: 45 }
+  return { expected: 0, upset: 50 }
+}
+
+function validCalculatorScore(value) {
+  const score = Number(value)
+  return Number.isInteger(score) && score >= 600 && score <= 3200
+}
+
+function calculateRatingSequence() {
+  calculatorError.value = ''
+  calculatorRows.value = []
+  if (!validCalculatorScore(calculatorStartScore.value)) {
+    calculatorError.value = '我方积分必须是 600–3200 之间的整数'
+    return
+  }
+  const invalidIndex = calculatorOpponents.value.findIndex(opponent =>
+    !validCalculatorScore(opponent.score)
+  )
+  if (invalidIndex !== -1) {
+    calculatorError.value = `第 ${invalidIndex + 1} 位对手的积分必须是 600–3200 之间的整数`
+    return
+  }
+
+  let runningScore = Number(calculatorStartScore.value)
+  calculatorRows.value = calculatorOpponents.value.map((opponent, index) => {
+    const opponentScore = Number(opponent.score)
+    const gapPoints = pointsByRatingGap(Math.abs(runningScore - opponentScore))
+    const selfIsHigher = runningScore >= opponentScore
+    const won = opponent.outcome === 'win'
+    const change = won
+      ? (selfIsHigher ? gapPoints.expected : gapPoints.upset)
+      : -(selfIsHigher ? gapPoints.upset : gapPoints.expected)
+    runningScore += change
+    return {
+      index: index + 1,
+      opponentScore,
+      outcome: won ? '胜' : '负',
+      change,
+      runningScore
+    }
+  })
+}
+
 function recentAverageScore(user, games, limit = 50) {
   const current = numberValue(user?.score)
   if (current === null) return null
@@ -883,6 +958,11 @@ function changePage(next) {
         <span>根据当前积分与历史交手估算单打胜率</span>
         <i>›</i>
       </button>
+      <button class="home-entry" type="button" @click="enterMode('calculator')">
+        <strong>积分预估计算</strong>
+        <span>按比赛顺序预估每盘积分变化</span>
+        <i>›</i>
+      </button>
     </section>
 
     <template v-else-if="appMode === 'single'">
@@ -1175,7 +1255,7 @@ function changePage(next) {
     </template>
     </template>
 
-    <template v-else>
+    <template v-else-if="appMode === 'versus'">
       <section class="hero function-hero versus-hero">
         <button class="back-home" type="button" @click="returnHome">‹ 返回</button>
         <h1>双方胜率预测</h1>
@@ -1314,6 +1394,97 @@ function changePage(next) {
         </div>
         <div v-else class="empty">当前没有查询到双方直接单打记录</div>
         <button v-if="versusError && !versusLoading" class="continue-button" type="button" @click="loadVersusHistory">继续读取</button>
+      </section>
+    </template>
+
+    <template v-else>
+      <section class="hero function-hero calculator-hero">
+        <button class="back-home" type="button" @click="returnHome">‹ 返回</button>
+        <h1>积分预估计算</h1>
+        <p>请按照实际比赛顺序依次填写对手积分</p>
+      </section>
+
+      <form class="calculator-form" @submit.prevent="calculateRatingSequence">
+        <div class="calculator-inputs">
+          <label class="calculator-self">
+            <span>我方积分</span>
+            <input
+              v-model="calculatorStartScore"
+              type="number"
+              step="1"
+              placeholder="600–3200"
+              @input="calculatorRows = []; calculatorError = ''"
+            >
+          </label>
+
+          <div class="calculator-opponents">
+            <div class="calculator-list-head">
+              <span>对手积分与结果</span>
+              <button type="button" @click="addCalculatorOpponent">＋ 添加</button>
+            </div>
+            <div
+              v-for="(opponent, index) in calculatorOpponents"
+              :key="index"
+              class="calculator-opponent-row"
+            >
+              <b>{{ index + 1 }}</b>
+              <input
+                v-model="opponent.score"
+                type="number"
+                step="1"
+                placeholder="对手积分"
+                @input="calculatorRows = []; calculatorError = ''"
+              >
+              <div class="outcome-tabs">
+                <button
+                  type="button"
+                  :class="{ active: opponent.outcome === 'win' }"
+                  @click="opponent.outcome = 'win'; calculatorRows = []; calculatorError = ''"
+                >胜</button>
+                <button
+                  type="button"
+                  :class="{ active: opponent.outcome === 'loss' }"
+                  @click="opponent.outcome = 'loss'; calculatorRows = []; calculatorError = ''"
+                >负</button>
+              </div>
+              <button
+                class="calculator-remove"
+                type="button"
+                :disabled="calculatorOpponents.length === 1"
+                :aria-label="`删除第 ${index + 1} 个对手`"
+                @click="removeCalculatorOpponent(index)"
+              >×</button>
+            </div>
+          </div>
+        </div>
+
+        <p class="calculator-tip">积分范围为 600–3200 分；每盘结算后的实时积分，会用于计算下一盘。</p>
+        <p v-if="calculatorError" class="error calculator-error">{{ calculatorError }}</p>
+        <button class="calculator-submit" type="submit">开始计算</button>
+      </form>
+
+      <section v-if="calculatorRows.length" class="records calculator-results">
+        <div class="section-head">
+          <h2>计算结果</h2>
+          <span>最终 {{ calculatorRows[calculatorRows.length - 1].runningScore }} 分</span>
+        </div>
+        <div class="table-wrap calculator-table">
+          <table>
+            <thead>
+              <tr><th>序号</th><th>我方</th><th>敌方</th><th>比分</th><th>变化</th><th>实时积分</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in calculatorRows" :key="row.index">
+                <td>{{ row.index }}</td>
+                <td>我方</td>
+                <td>{{ row.opponentScore }}</td>
+                <td><strong class="score">{{ row.outcome }}</strong></td>
+                <td :class="{ positive: row.change > 0, negative: row.change < 0 }">{{ row.change > 0 ? `+${row.change}` : row.change }}</td>
+                <td>{{ row.runningScore }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </section>
     </template>
   </main>
