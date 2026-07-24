@@ -1412,7 +1412,7 @@ function changePage(next) {
               v-model="calculatorStartScore"
               type="number"
               step="1"
-              placeholder="600–3200"
+              placeholder="请输入"
               @input="calculatorRows = []; calculatorError = ''"
             >
           </label>
@@ -1458,7 +1458,7 @@ function changePage(next) {
           </div>
         </div>
 
-        <p class="calculator-tip">积分范围为 600–3200 分；每盘结算后的实时积分，会用于计算下一盘。</p>
+        <p class="calculator-tip">每盘结算后的实时积分，会用于计算下一盘。</p>
         <p v-if="calculatorError" class="error calculator-error">{{ calculatorError }}</p>
         <button class="calculator-submit" type="submit">开始计算</button>
       </form>
