@@ -34,8 +34,25 @@ const versusSearching = ref([false, false])
 const versusLoading = ref(false)
 const versusError = ref('')
 const versusGames = ref([])
+const versusRecentGames = ref([])
 const versusProgress = ref({ pages: 0, records: 0, complete: false })
 let versusController = null
+
+function recentAverageScore(user, games, limit = 50) {
+  const current = numberValue(user?.score)
+  if (current === null) return null
+  const records = summarizeGames(String(user.uid), games, false, user).records
+    .filter(record => !record.doubles && isSettledScoreChange(record.scoreChange))
+    .slice(0, limit)
+  if (!records.length) return null
+  let running = current
+  const scores = records.map(record => {
+    const after = running
+    running -= numberValue(record.scoreChange)
+    return after
+  })
+  return Math.round(scores.reduce((sum, score) => sum + score, 0) / scores.length)
+}
 
 const versusPrediction = computed(() => {
   const [playerA, playerB] = versusSelected.value
@@ -72,12 +89,20 @@ const versusPrediction = computed(() => {
   const total = records.length
   const scoreA = numberValue(playerA.score)
   const scoreB = numberValue(playerB.score)
-  const ratingProbabilityA = scoreA !== null && scoreB !== null
-    ? 1 / (1 + 10 ** ((scoreB - scoreA) / 400))
+  const recentAverageA = recentAverageScore(playerA, versusGames.value)
+  const recentAverageB = recentAverageScore(playerB, versusRecentGames.value)
+  const strengthA = scoreA !== null && recentAverageA !== null ? (scoreA + recentAverageA) / 2 : scoreA ?? recentAverageA
+  const strengthB = scoreB !== null && recentAverageB !== null ? (scoreB + recentAverageB) / 2 : scoreB ?? recentAverageB
+  const ratingProbabilityA = strengthA !== null && strengthB !== null
+    ? 1 / (1 + 10 ** ((strengthB - strengthA) / 400))
     : 0.5
   const historyProbabilityA = total ? winsA / total : ratingProbabilityA
+  const gamesWonA = records.reduce((sum, record) => sum + Number(record.scoreLine.split(':')[0] || 0), 0)
+  const gamesWonB = records.reduce((sum, record) => sum + Number(record.scoreLine.split(':')[1] || 0), 0)
+  const gameProbabilityA = gamesWonA + gamesWonB ? gamesWonA / (gamesWonA + gamesWonB) : ratingProbabilityA
+  const headToHeadProbabilityA = (historyProbabilityA + gameProbabilityA) / 2
   const historyWeight = total / (total + 10)
-  const finalA = ratingProbabilityA * (1 - historyWeight) + historyProbabilityA * historyWeight
+  const finalA = ratingProbabilityA * (1 - historyWeight) + headToHeadProbabilityA * historyWeight
   const percentageA = Math.round(finalA * 100)
 
   return {
@@ -87,6 +112,10 @@ const versusPrediction = computed(() => {
     winsB,
     scoreA,
     scoreB,
+    recentAverageA,
+    recentAverageB,
+    gamesWonA,
+    gamesWonB,
     ratingProbabilityA,
     historyProbabilityA,
     historyWeight,
@@ -385,6 +414,7 @@ async function searchVersusUser(side) {
   selected[side] = null
   versusSelected.value = selected
   versusGames.value = []
+  versusRecentGames.value = []
 
   try {
     const users = new Map()
@@ -422,6 +452,7 @@ function chooseVersusUser(side, user) {
   candidatesBySide[side] = []
   versusCandidates.value = candidatesBySide
   versusGames.value = []
+  versusRecentGames.value = []
   versusError.value = ''
   if (selected[0] && selected[1]) loadVersusHistory()
 }
@@ -433,12 +464,33 @@ function resetVersusSide(side) {
   selected[side] = null
   versusSelected.value = selected
   versusGames.value = []
+  versusRecentGames.value = []
   versusError.value = ''
+}
+
+async function loadRecentHistory(user, signal) {
+  const cached = await readQueryCache(user.uid)
+  if (cached?.games?.length) {
+    const settledSingles = summarizeGames(String(user.uid), cached.games, false, user).records
+      .filter(record => !record.doubles && isSettledScoreChange(record.scoreChange))
+    if (settledSingles.length >= 50 || cached.complete) return cached.games
+  }
+  const games = new Map()
+  for (let recordPage = 1; recordPage <= 30; recordPage += 1) {
+    const response = await fetchRecordPage(user.uid, recordPage, signal)
+    const rows = Array.isArray(response?.data?.data) ? response.data.data : []
+    rows.forEach((game, index) => games.set(String(game.gameid || `${recordPage}-${index}`), game))
+    const settledSingles = summarizeGames(String(user.uid), [...games.values()], false, user).records
+      .filter(record => !record.doubles && isSettledScoreChange(record.scoreChange))
+    if (!rows.length || settledSingles.length >= 50) break
+  }
+  return [...games.values()]
 }
 
 async function loadVersusHistory() {
   const sourceUser = versusSelected.value[0]
-  if (!sourceUser || !versusSelected.value[1]) return
+  const otherUser = versusSelected.value[1]
+  if (!sourceUser || !otherUser) return
   versusController?.abort()
   versusController = new AbortController()
   const { signal } = versusController
@@ -447,6 +499,9 @@ async function loadVersusHistory() {
   versusLoading.value = true
   versusError.value = ''
   versusProgress.value = { pages: 0, records: 0, complete: false }
+  const recentHistoryPromise = loadRecentHistory(otherUser, signal)
+    .then(games => { versusRecentGames.value = games })
+    .catch(() => { versusRecentGames.value = [] })
 
   try {
     const cached = await readQueryCache(sourceUser.uid)
@@ -461,7 +516,10 @@ async function loadVersusHistory() {
         records: games.size,
         complete: Boolean(cached.complete)
       }
-      if (cached.complete && Date.now() - Number(cached.updatedAt || 0) < completeCacheLifetime) return
+      if (cached.complete && Date.now() - Number(cached.updatedAt || 0) < completeCacheLifetime) {
+        await recentHistoryPromise
+        return
+      }
       if (cached.complete) {
         games.clear()
         startPage = 1
@@ -509,6 +567,7 @@ async function loadVersusHistory() {
       }
       if (reachedEnd) break
     }
+    await recentHistoryPromise
   } catch (requestError) {
     if (requestError.name !== 'AbortError') {
       versusError.value = requestError.message || '读取历史战绩失败，请稍后重试'
@@ -794,7 +853,7 @@ function changePage(next) {
 <template>
   <main>
     <section v-if="appMode === 'home'" class="home-screen">
-      <h1>年度积分追溯</h1>
+      <h1>乒乓助手</h1>
       <button class="home-entry" type="button" @click="enterMode('single')">
         <strong>查询选手战绩</strong>
         <span>查看个人场次、积分趋势与年度积分</span>
@@ -1190,32 +1249,19 @@ function changePage(next) {
             <b>{{ versusPrediction.scoreA ?? '-' }} : {{ versusPrediction.scoreB ?? '-' }}</b>
           </div>
           <div>
-            <span>② 积分基础胜率</span>
-            <b>{{ Math.round(versusPrediction.ratingProbabilityA * 100) }}% : {{ 100 - Math.round(versusPrediction.ratingProbabilityA * 100) }}%</b>
+            <span>② 近50盘平均积分</span>
+            <b>{{ versusPrediction.recentAverageA ?? '-' }} : {{ versusPrediction.recentAverageB ?? '-' }}</b>
           </div>
           <div>
             <span>③ 历史单打交手</span>
-            <b>{{ versusPrediction.total }} 场（{{ versusPrediction.winsA }} : {{ versusPrediction.winsB }}）</b>
+            <b>{{ versusPrediction.total }} 盘（{{ versusPrediction.winsA }} : {{ versusPrediction.winsB }}）· 局数 {{ versusPrediction.gamesWonA }} : {{ versusPrediction.gamesWonB }}</b>
           </div>
           <div>
             <span>④ 历史胜率</span>
             <b v-if="versusPrediction.total">{{ Math.round(versusPrediction.historyProbabilityA * 100) }}% : {{ 100 - Math.round(versusPrediction.historyProbabilityA * 100) }}%</b>
             <b v-else>暂无交手，暂不修正</b>
           </div>
-          <div>
-            <span>⑤ 历史数据权重</span>
-            <b>{{ Math.round(versusPrediction.historyWeight * 100) }}%</b>
-          </div>
-          <div class="prediction-final">
-            <span>最终参考胜率</span>
-            <b>{{ versusPrediction.percentageA }}% : {{ versusPrediction.percentageB }}%</b>
-          </div>
         </div>
-        <p class="prediction-formula">
-          积分基础胜率 × {{ 100 - Math.round(versusPrediction.historyWeight * 100) }}%
-          ＋ 历史胜率 × {{ Math.round(versusPrediction.historyWeight * 100) }}%
-        </p>
-        <p class="prediction-note">历史权重 = 交手场次 ÷（交手场次 + 10）。交手越多，历史结果影响越大；本结果仅供参考，并非官方预测。</p>
 
         <div class="section-head direct-head">
           <h2>历史单打交手</h2>
