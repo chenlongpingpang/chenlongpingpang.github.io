@@ -210,8 +210,8 @@ h1 { margin: 20px 0 26px; font-size: 32px; text-align: center; }
 .tier-band { margin-bottom: 8px; border: 1px solid var(--line); background: #fff; }
 .tier-band-title { min-height: 36px; padding: 0 10px; display: flex; align-items: center; justify-content: space-between; color: #fff; background: #1f4e78; font-size: 12px; }
 .tier-band-title span { opacity: .8; font-size: 10px; }
-.tier-opponents { padding: 7px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
-.tier-opponent { min-width: 0; padding: 7px 5px; overflow: hidden; font-size: 10px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.tier-opponents { padding: 6px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.tier-opponent { min-width: 0; padding: 7px 2px; overflow: hidden; font-size: clamp(8px, 2.25vw, 10px); letter-spacing: -.2px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .tier-opponent b { margin-left: 2px; }
 .tier-empty { padding: 10px; color: #bbb; text-align: center; }
 .calculator-hero h1 { margin-bottom: 8px; }
