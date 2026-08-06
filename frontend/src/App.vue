@@ -39,6 +39,16 @@ const versusProgress = ref({ pages: 0, records: 0, complete: false })
 const predictionTitleClicks = ref(0)
 let versusController = null
 
+const tierKeyword = ref('')
+const tierCandidates = ref([])
+const tierSelected = ref(null)
+const tierSearching = ref(false)
+const tierLoading = ref(false)
+const tierError = ref('')
+const tierOpponents = ref([])
+const tierProgress = ref({ records: 0, profiles: 0, totalProfiles: 0, stage: '' })
+let tierController = null
+
 const calculatorStartScore = ref('')
 const calculatorOpponents = ref([{ score: '', outcome: 'win' }])
 const calculatorRows = ref([])
@@ -112,6 +122,221 @@ function calculateRatingSequence() {
       runningScore
     }
   })
+}
+
+const tierBands = computed(() => {
+  const bands = [{ label: '2000以上', min: 2000, max: Infinity }]
+  for (let upper = 2000; upper > 600; upper -= 50) {
+    bands.push({ label: `${upper - 50}-${upper}`, min: upper - 50, max: upper })
+  }
+  bands.push({ label: '600以下', min: -Infinity, max: 600 })
+  bands.push({ label: '实时积分未知', min: null, max: null })
+  return bands.map(band => ({
+    ...band,
+    opponents: tierOpponents.value
+      .filter(opponent => band.min === null
+        ? opponent.currentScore === null
+        : opponent.currentScore !== null && opponent.currentScore >= band.min && opponent.currentScore < band.max)
+      .sort((left, right) => right.games - left.games
+        || (right.currentScore || 0) - (left.currentScore || 0)
+        || tierDisplayName(left).localeCompare(tierDisplayName(right), 'zh-CN'))
+  }))
+})
+
+function tierWinRate(opponent) {
+  const decided = opponent.wins + opponent.losses
+  return decided ? opponent.wins / decided : 0
+}
+
+function tierColor(opponent) {
+  if (!opponent.wins) return 'red'
+  return tierWinRate(opponent) <= 0.5 ? 'yellow' : 'green'
+}
+
+function tierDisplayName(opponent) {
+  if (!opponent.realname) return opponent.nickname
+  const duplicated = tierOpponents.value.some(other =>
+    other.nickname !== opponent.nickname && other.realname === opponent.realname
+  )
+  return duplicated ? opponent.nickname : opponent.realname
+}
+
+function aggregateTierOpponents(userId, games) {
+  const opponents = new Map()
+  games.forEach(game => {
+    const doubles = (game.uid11 && String(game.uid11) !== '0') || (game.uid22 && String(game.uid22) !== '0')
+    if (doubles) return
+    const first = String(game.uid1) === String(userId)
+    const nickname = playerName(first ? game.username2 : game.username1)
+    const opponentUid = String(first ? game.uid2 : game.uid1)
+    if (!nickname || !opponentUid || opponentUid === '0') return
+    const selfResult = Number(first ? game.result1 : game.result2) || 0
+    const opponentResult = Number(first ? game.result2 : game.result1) || 0
+    const item = opponents.get(nickname) || {
+      nickname, uids: [], realname: '', currentScore: null, wins: 0, losses: 0, draws: 0, games: 0
+    }
+    if (!item.uids.includes(opponentUid)) item.uids.push(opponentUid)
+    item.games += 1
+    if (selfResult > opponentResult) item.wins += 1
+    else if (selfResult < opponentResult) item.losses += 1
+    else item.draws += 1
+    opponents.set(nickname, item)
+  })
+  return [...opponents.values()]
+}
+
+async function searchTierUsers() {
+  const value = tierKeyword.value.trim()
+  if (!value || value.length > 30) {
+    tierError.value = '请输入 1 到 30 个字符的姓名或昵称'
+    return
+  }
+  tierSearching.value = true
+  tierError.value = ''
+  tierCandidates.value = []
+  tierSelected.value = null
+  tierOpponents.value = []
+  try {
+    const users = new Map()
+    for (let searchPage = 1; users.size < maxCandidates; searchPage += 1) {
+      const response = await fetchUpstream('/user/lists', { key: value, page: searchPage })
+      const rows = Array.isArray(response?.data?.data) ? response.data.data : []
+      rows.forEach(user => user?.uid && users.set(String(user.uid), user))
+      if (!rows.length || searchPage >= Number(response?.data?.last_page || searchPage)) break
+    }
+    tierCandidates.value = [...users.values()].slice(0, maxCandidates)
+  } catch (requestError) {
+    tierError.value = requestError.message || '无法读取选手信息'
+  } finally {
+    tierSearching.value = false
+  }
+}
+
+async function findTierProfile(opponent, signal) {
+  const keys = [...new Set([opponent.realname, opponent.nickname].filter(value => value && value.length >= 2))]
+  for (const key of keys) {
+    for (let page = 1; page <= 50; page += 1) {
+      const response = await fetchUpstream('/user/lists', { key, page }, signal)
+      const rows = Array.isArray(response?.data?.data) ? response.data.data : []
+      const exact = rows.find(user => opponent.uids.includes(String(user.uid)))
+      if (exact) return exact
+      if (!rows.length || page >= Number(response?.data?.last_page || page)) break
+    }
+  }
+  return null
+}
+
+async function chooseTierUser(user) {
+  tierController?.abort()
+  tierController = new AbortController()
+  const { signal } = tierController
+  tierSelected.value = user
+  tierCandidates.value = []
+  tierOpponents.value = []
+  tierError.value = ''
+  tierLoading.value = true
+  tierProgress.value = { records: 0, profiles: 0, totalProfiles: 0, stage: '读取全部单打记录' }
+  try {
+    const games = new Map()
+    let startPage = 1
+    const cached = await readQueryCache(user.uid)
+    if (cached?.games?.length) {
+      cached.games.forEach((game, index) => games.set(String(game.gameid || `cached-${index}`), game))
+      if (cached.complete) startPage = maxRecordPages + 1
+      else startPage = Math.max(1, Number(cached.nextPage) || 1)
+    }
+    for (let batchStart = startPage; batchStart <= maxRecordPages; batchStart += recordBatchSize) {
+      const pages = Array.from({ length: recordBatchSize }, (_, index) => batchStart + index)
+      const responses = await Promise.all(pages.map(recordPage => fetchRecordPage(user.uid, recordPage, signal)))
+      let reachedEnd = false
+      responses.forEach((response, responseIndex) => {
+        const rows = Array.isArray(response?.data?.data) ? response.data.data : []
+        if (!rows.length) reachedEnd = true
+        rows.forEach((game, index) => games.set(String(game.gameid || `${pages[responseIndex]}-${index}`), game))
+      })
+      tierProgress.value = { ...tierProgress.value, records: games.size }
+      if (reachedEnd) break
+    }
+    tierOpponents.value = aggregateTierOpponents(user.uid, [...games.values()])
+    tierProgress.value = {
+      records: games.size,
+      profiles: 0,
+      totalProfiles: tierOpponents.value.length,
+      stage: '读取对手当前积分'
+    }
+    for (let start = 0; start < tierOpponents.value.length; start += 8) {
+      const batch = tierOpponents.value.slice(start, start + 8)
+      const settled = await Promise.allSettled(batch.map(opponent => findTierProfile(opponent, signal)))
+      const next = [...tierOpponents.value]
+      settled.forEach((result, index) => {
+        if (result.status !== 'fulfilled' || !result.value) return
+        const position = start + index
+        next[position] = {
+          ...next[position],
+          realname: result.value.realname || '',
+          currentScore: Number(result.value.score) || null
+        }
+      })
+      tierOpponents.value = next
+      tierProgress.value = {
+        ...tierProgress.value,
+        profiles: Math.min(start + batch.length, tierOpponents.value.length)
+      }
+    }
+  } catch (requestError) {
+    if (requestError.name !== 'AbortError') tierError.value = requestError.message || '读取分档数据失败'
+  } finally {
+    if (tierController?.signal === signal) {
+      tierLoading.value = false
+      tierController = null
+    }
+  }
+}
+
+function resetTierUser() {
+  tierController?.abort()
+  tierSelected.value = null
+  tierOpponents.value = []
+  tierError.value = ''
+}
+
+async function downloadTierExcel() {
+  if (!tierOpponents.value.length || !tierSelected.value) return
+  try {
+    const module = await import('xlsx-js-style')
+    const XLSX = module.default || module
+    const groups = tierBands.value
+    const maxItems = Math.max(...groups.map(group => group.opponents.length), 1)
+    const rows = groups.map(group => [
+      group.label,
+      ...group.opponents.map(opponent => `${tierDisplayName(opponent)}（${opponent.currentScore || '未知'}） ${opponent.wins}/${opponent.losses}`),
+      ...Array(Math.max(0, maxItems - group.opponents.length)).fill('')
+    ])
+    const sheet = XLSX.utils.aoa_to_sheet(rows)
+    sheet['!cols'] = [{ wch: 14 }, ...Array(maxItems).fill({ wch: 22 })]
+    rows.forEach((row, rowIndex) => {
+      row.forEach((value, columnIndex) => {
+        const address = XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex })
+        const cell = sheet[address]
+        if (!cell) return
+        if (columnIndex === 0) {
+          cell.s = { fill: { fgColor: { rgb: '1F4E78' } }, font: { color: { rgb: 'FFFFFF' }, bold: true }, alignment: { horizontal: 'center' } }
+          return
+        }
+        const opponent = groups[rowIndex].opponents[columnIndex - 1]
+        if (!opponent) return
+        const colors = {
+          red: ['F4CCCC', '9C0006'], yellow: ['FFF2CC', '7F6000'], green: ['D9EAD3', '274E13']
+        }[tierColor(opponent)]
+        cell.s = { fill: { fgColor: { rgb: colors[0] } }, font: { color: { rgb: colors[1] } }, alignment: { horizontal: 'center' } }
+      })
+    })
+    const book = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(book, sheet, '交手分档')
+    XLSX.writeFile(book, `${tierSelected.value.realname || tierSelected.value.username2 || '选手'}单打交手分档.xlsx`)
+  } catch {
+    tierError.value = 'Excel 生成失败，请稍后重试'
+  }
 }
 
 function recentAverageScore(user, games, limit = 50) {
@@ -481,8 +706,10 @@ function enterMode(mode) {
 function returnHome() {
   activeRecordController?.abort()
   versusController?.abort()
+  tierController?.abort()
   loading.value = false
   versusLoading.value = false
+  tierLoading.value = false
   appMode.value = 'home'
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
@@ -953,6 +1180,11 @@ function changePage(next) {
         <span>查看个人场次、积分趋势与年度积分</span>
         <i>›</i>
       </button>
+      <button class="home-entry" type="button" @click="enterMode('tiers')">
+        <strong>单打交手分档</strong>
+        <span>按对手当前积分查看胜负分布</span>
+        <i>›</i>
+      </button>
       <button class="home-entry" type="button" @click="enterMode('versus')">
         <strong>双方胜率预测</strong>
         <span>根据当前积分与历史交手估算单打胜率</span>
@@ -1253,6 +1485,69 @@ function changePage(next) {
         </div>
       </section>
     </template>
+    </template>
+
+    <template v-else-if="appMode === 'tiers'">
+      <section class="hero function-hero tier-hero">
+        <button class="back-home" type="button" @click="returnHome">‹ 返回</button>
+        <h1>单打交手分档</h1>
+        <p>按对手当前实时积分分档</p>
+        <form v-if="!tierSelected" class="search" @submit.prevent="searchTierUsers">
+          <div class="search-row">
+            <input v-model="tierKeyword" type="search" autocomplete="off" placeholder="请输入姓名或昵称" :disabled="tierSearching">
+            <button :disabled="tierSearching">{{ tierSearching ? '搜索中…' : '查询' }}</button>
+          </div>
+        </form>
+      </section>
+
+      <section v-if="tierCandidates.length" class="candidates">
+        <div class="section-head candidate-head"><h2>选择选手</h2><span>找到 {{ tierCandidates.length }} 位</span></div>
+        <div class="candidate-grid">
+          <button v-for="user in tierCandidates" :key="user.uid" class="candidate" type="button" @click="chooseTierUser(user)">
+            <span class="avatar">
+              <span>{{ (user.realname || user.username2 || '?').slice(0, 1) }}</span>
+              <img :src="avatarUrl(user.uid)" alt="" @error="$event.currentTarget.style.display = 'none'">
+            </span>
+            <span class="candidate-info"><strong>{{ user.realname || '未填写姓名' }}</strong><small>{{ user.username2 || '未填写昵称' }} · ID {{ user.uid }}</small></span>
+            <span class="candidate-score">{{ user.score || '-' }}<small>积分</small></span>
+          </button>
+        </div>
+      </section>
+
+      <section v-if="tierSelected" class="tier-profile">
+        <div class="selected-player">
+          <span class="avatar"><span>{{ (tierSelected.realname || tierSelected.username2 || '?').slice(0, 1) }}</span><img :src="avatarUrl(tierSelected.uid)" alt="" @error="$event.currentTarget.style.display = 'none'"></span>
+          <span><strong>{{ tierSelected.realname || tierSelected.username2 }}</strong><small>{{ tierSelected.username2 || '未填写昵称' }} · ID {{ tierSelected.uid }}</small></span>
+        </div>
+        <button type="button" @click="resetTierUser">重选</button>
+      </section>
+
+      <section v-if="tierLoading" class="loading-card tier-loading">
+        <span class="ball"></span>
+        <div>
+          <strong v-if="tierProgress.stage === '读取全部单打记录'">已读取 {{ tierProgress.records }} 场战绩</strong>
+          <strong v-else>已读取 {{ tierProgress.profiles }} / {{ tierProgress.totalProfiles }} 位对手的当前积分</strong>
+          <p>数据会分批更新，请保持页面打开</p>
+        </div>
+      </section>
+      <p v-if="tierError" class="error tier-error">{{ tierError }}</p>
+
+      <section v-if="tierOpponents.length" class="tier-results">
+        <div class="tier-toolbar">
+          <span>共 {{ tierOpponents.length }} 位对手</span>
+          <button type="button" :disabled="tierLoading" @click="downloadTierExcel">{{ tierLoading ? '读取完成后下载' : '下载 Excel' }}</button>
+        </div>
+        <div class="tier-legend"><span class="red">从未战胜</span><span class="yellow">胜率≤50%</span><span class="green">胜率&gt;50%</span></div>
+        <div v-for="band in tierBands" :key="band.label" class="tier-band">
+          <div class="tier-band-title"><strong>{{ band.label }}</strong><span>{{ band.opponents.length }} 人</span></div>
+          <div v-if="band.opponents.length" class="tier-opponents">
+            <span v-for="opponent in band.opponents" :key="opponent.nickname" :class="['tier-opponent', tierColor(opponent)]">
+              {{ tierDisplayName(opponent) }}（{{ opponent.currentScore || '未知' }}） <b>{{ opponent.wins }}/{{ opponent.losses }}</b>
+            </span>
+          </div>
+          <div v-else class="tier-empty">—</div>
+        </div>
+      </section>
     </template>
 
     <template v-else-if="appMode === 'versus'">

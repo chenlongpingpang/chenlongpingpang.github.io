@@ -191,6 +191,29 @@ h1 { margin: 20px 0 26px; font-size: 32px; text-align: center; }
 
 .records { margin-top: 0; padding-top: 14px; }
 .calculator-hero { text-align: center; }
+.tier-hero { text-align: center; }
+.tier-hero p { margin: 0 0 14px; font-size: 13px; }
+.tier-profile { margin: 14px 12px 0; padding: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #fff; border: 1px solid var(--line); }
+.tier-profile .selected-player { flex: 1; min-width: 0; }
+.tier-profile > button { padding: 8px 10px; border: 0; color: var(--blue); background: transparent; font-weight: 700; }
+.tier-loading { margin-top: 12px; }
+.tier-error { margin: 12px; }
+.tier-results { margin: 14px 12px 0; }
+.tier-toolbar { padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; color: #666; background: #fff; border: 1px solid var(--line); font-size: 12px; }
+.tier-toolbar button { min-height: 36px; padding: 0 14px; border: 0; color: #fff; background: var(--blue); font-weight: 700; }
+.tier-toolbar button:disabled { opacity: .5; }
+.tier-legend { padding: 9px 0; display: flex; gap: 6px; color: #666; font-size: 10px; }
+.tier-legend span { padding: 4px 7px; border-radius: 2px; }
+.tier-legend .red, .tier-opponent.red { color: #9c0006; background: #f4cccc; }
+.tier-legend .yellow, .tier-opponent.yellow { color: #7f6000; background: #fff2cc; }
+.tier-legend .green, .tier-opponent.green { color: #274e13; background: #d9ead3; }
+.tier-band { margin-bottom: 8px; border: 1px solid var(--line); background: #fff; }
+.tier-band-title { min-height: 36px; padding: 0 10px; display: flex; align-items: center; justify-content: space-between; color: #fff; background: #1f4e78; font-size: 12px; }
+.tier-band-title span { opacity: .8; font-size: 10px; }
+.tier-opponents { padding: 7px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+.tier-opponent { min-width: 0; padding: 7px 5px; overflow: hidden; font-size: 10px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.tier-opponent b { margin-left: 2px; }
+.tier-empty { padding: 10px; color: #bbb; text-align: center; }
 .calculator-hero h1 { margin-bottom: 8px; }
 .calculator-hero p { margin: 0; font-size: 13px; }
 .calculator-form { margin: 16px 12px 0; }
