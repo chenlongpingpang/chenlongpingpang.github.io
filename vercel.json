@@ -1,0 +1,10 @@
+{
+  "buildCommand": "cd frontend && npm ci && npm run build",
+  "outputDirectory": "frontend/dist",
+  "framework": null,
+  "rewrites": [
+    { "source": "/user/lists(.*)", "destination": "/api/proxy" },
+    { "source": "/User/getGames(.*)", "destination": "/api/proxy" },
+    { "source": "/enter/detail(.*)", "destination": "/api/proxy" }
+  ]
+}

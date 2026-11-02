@@ -28,6 +28,10 @@ jobs:
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
+        env:
+          # 若在仓库 Settings → Secrets and variables → Actions 配置了 VITE_KQ_PROXY_BASE
+          # （你的鉴权代理地址），构建产物会自动优先走代理；未配置时保持直连开球网。
+          VITE_KQ_PROXY_BASE: ${{ secrets.VITE_KQ_PROXY_BASE }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -18,7 +18,13 @@ const annualDetail = ref('overview')
 const eventTitles = ref({})
 const loadingProgress = ref({ pages: 0, records: 0, resumed: false, nextPage: 1 })
 const pageSize = 20
-const upstreamBase = (import.meta.env.VITE_KQ_BASE_URL || 'https://kaiqiuwang.cc/xcx/public/index.php/api').replace(/\/$/, '')
+// 数据入口：优先使用鉴权代理（VITE_KQ_PROXY_BASE，可避免开球网接口的 102 鉴权限制），
+// 其次兼容直连配置（VITE_KQ_BASE_URL），默认直连开球网公开接口。
+const upstreamBase = (
+  import.meta.env.VITE_KQ_PROXY_BASE
+  || import.meta.env.VITE_KQ_BASE_URL
+  || 'https://kaiqiuwang.cc/xcx/public/index.php/api'
+).replace(/\/$/, '')
 const maxRecordPages = 500
 const maxCandidates = 50
 const recordBatchSize = 5
