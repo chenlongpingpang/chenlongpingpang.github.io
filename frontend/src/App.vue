@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
-import md5 from 'blueimp-md5'
+import { fetchUpstream } from './api.js'
 import PlayerView from './PlayerView.vue'
 
 const appMode = ref('home')
@@ -609,16 +609,6 @@ watch(statScope, () => {
   page.value = 1
 })
 
-async function fetchUpstream(path, params, signal) {
-  const url = new URL(`${upstreamBase}${path}`)
-  Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, String(value)))
-  const response = await fetch(url, { signal })
-  const data = await response.json().catch(() => ({}))
-  if (!response.ok || data.code !== 1) {
-    throw new Error(data.msg || '开球网接口请求失败，请稍后重试')
-  }
-  return data
-}
 
 function openCacheDatabase() {
   if (!('indexedDB' in window)) return Promise.reject(new Error('当前浏览器不支持断点缓存'))

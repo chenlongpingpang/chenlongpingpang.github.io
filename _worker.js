@@ -1,137 +1,136 @@
 /**
  * 乒乓助手 · 开球网鉴权代理（Cloudflare Pages / Workers）
  *
- * 背景：开球网（kaiqiuwang.cc）的选手搜索 / 战绩 / 赛事详情接口已收紧鉴权，
- * 无 token 的直接请求返回错误码 102。本代理负责：
- *   1. 静默登录（POST /user/login）换取 token；
- *   2. 携带 token / user_id 转发白名单内的查询请求；
- *   3. token 失效（返回 102）时强制重登重试一次；
- *   4. 其余路径回退到 Pages 静态资源（env.ASSETS），实现"一个站点同时托管前端与代理"。
+ * 前端调 /api/<开球网路径>，Worker 自动：
+ *   1. 登录拿 token（内存缓存 30 分钟）
+ *   2. 对 /user/lists、/user/getgames 自动加 MD5 签名
+ *   3. 带 token / user_id / 微信 UA 转发到开球网
  *
- * 部署为 Cloudflare Pages：
- *   构建命令：cd frontend && npm ci && npm run build
- *   输出目录：frontend/dist
- *   然后在项目 Settings → Variables 配置环境变量：
- *     KQ_ACCOUNT  开球网登录账号
- *     KQ_PASSWORD 开球网登录密码
- *     KQ_OPEN_ID  开球网 OpenID
- *     KQ_UPSTREAM （可选）上游基址，默认 https://kaiqiuwang.cc/xcx/public/index.php/api
- *   前端构建时设置 VITE_KQ_PROXY_BASE 为 Pages 域名，例如 https://pingpang.pages.dev
+ * 环境变量（Cloudflare Pages → Settings → Variables）：
+ *   KQ_ACCOUNT  开球网登录账号
+ *   KQ_PASSWORD 开球网登录密码
+ *   KQ_OPEN_ID  开球网 OpenID
  */
 
-const DEFAULT_UPSTREAM = 'https://kaiqiuwang.cc/xcx/public/index.php/api'
-const TOKEN_TTL = 30 * 60 * 1000 // token 内存缓存 30 分钟
+const UPSTREAM = 'https://kaiqiuwang.cc/xcx/public/index.php/api'
+const TOKEN_TTL = 30 * 60 * 1000
+const SIGN_SECRET = 'e8b7a4e1-06d3-4e0b-95cf-9f0450072389'
+const SIGNED_PATHS = ['/user/lists', '/user/getgames']
+const WX_UA = 'Mozilla/5.0 (iPad; CPU OS 26_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.76(0x18004c3a) NetType/WIFI Language/zh_CN'
+const WX_REFERER = 'https://servicewechat.com/wxff09fb0e92aa456a/552/page-frame.html'
 
-// 允许代理转发的开球网 API 路径（白名单，防止代理被滥用）
-const ALLOWED_PATHS = ['/user/lists', '/User/getGames', '/enter/detail']
+let cachedAuth = null
 
-let cachedAuth = null // { token, userId, expiresAt }
-
-function corsHeaders() {
+function cors() {
   return {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, token, user_id',
+    'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Max-Age': '86400'
   }
 }
 
-function jsonResponse(payload, extraHeaders) {
-  return new Response(JSON.stringify(payload), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json; charset=utf-8', ...extraHeaders }
+function json(data, extra) {
+  return new Response(JSON.stringify(data), {
+    headers: { 'Content-Type': 'application/json; charset=utf-8', ...extra }
   })
+}
+
+async function md5hex(s) {
+  const buf = await crypto.subtle.digest('MD5', new TextEncoder().encode(s))
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
 async function login(env) {
   if (cachedAuth && Date.now() < cachedAuth.expiresAt) return cachedAuth
-  if (!env.KQ_ACCOUNT || !env.KQ_PASSWORD || !env.KQ_OPEN_ID) {
-    throw new Error('代理未配置开球网静默登录环境变量（KQ_ACCOUNT / KQ_PASSWORD / KQ_OPEN_ID）')
-  }
-  const upstream = (env.KQ_UPSTREAM || DEFAULT_UPSTREAM).replace(/\/$/, '')
-  const body = new URLSearchParams()
-  body.set('account', env.KQ_ACCOUNT)
-  body.set('password', env.KQ_PASSWORD)
-  body.set('open_id', env.KQ_OPEN_ID)
-  const response = await fetch(`${upstream}/user/login`, {
+  if (!env.KQ_ACCOUNT) throw new Error('未配置 KQ_ACCOUNT')
+  const body = new URLSearchParams({
+    account: env.KQ_ACCOUNT,
+    password: env.KQ_PASSWORD,
+    open_id: env.KQ_OPEN_ID
+  })
+  const r = await fetch(`${UPSTREAM}/user/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body
   })
-  const data = await response.json().catch(() => ({}))
-  const userinfo = data?.data?.userinfo
-  if (data?.code !== 1 || !userinfo?.token) {
-    throw new Error(data?.msg || '开球网静默登录失败')
-  }
-  cachedAuth = {
-    token: userinfo.token,
-    userId: String(userinfo.user_id || userinfo.id || ''),
-    expiresAt: Date.now() + TOKEN_TTL
-  }
+  const data = await r.json().catch(() => ({}))
+  const ui = data?.data?.userinfo
+  if (data?.code !== 1 || !ui?.token) throw new Error(data?.msg || '开球网登录失败')
+  cachedAuth = { token: ui.token, userId: String(ui.user_id || ui.id || ''), expiresAt: Date.now() + TOKEN_TTL }
   return cachedAuth
-}
-
-function clearAuth() {
-  cachedAuth = null
-}
-
-async function fetchUpstream(target, method, auth, body) {
-  const headers = { Accept: 'application/json' }
-  if (auth?.token) headers.token = auth.token
-  if (auth?.userId) headers.user_id = auth.userId
-  if (body) headers['Content-Type'] = 'application/x-www-form-urlencoded'
-  return fetch(target, { method, headers, body })
-}
-
-async function proxyRequest(request, env) {
-  const url = new URL(request.url)
-  const upstream = (env.KQ_UPSTREAM || DEFAULT_UPSTREAM).replace(/\/$/, '')
-  const target = `${upstream}${url.pathname}${url.search}`
-
-  let auth
-  try {
-    auth = await login(env)
-  } catch (error) {
-    return jsonResponse({ code: 0, msg: error.message, data: null }, corsHeaders())
-  }
-
-  const body = ['POST', 'PUT', 'PATCH'].includes(request.method)
-    ? await request.text().catch(() => '')
-    : undefined
-
-  const response = await fetchUpstream(target, request.method, auth, body)
-  const data = await response.json().catch(() => ({ code: 0, msg: '上游返回非 JSON 响应', data: null }))
-
-  // token 疑似失效（业务错误 102）：清缓存重登一次再试
-  if (data?.code !== 1 && String(data?.msg || '').includes('102')) {
-    clearAuth()
-    let retryAuth = null
-    try {
-      retryAuth = await login(env)
-    } catch {
-      // 重登失败时保留原始响应
-    }
-    if (retryAuth) {
-      const retry = await fetchUpstream(target, request.method, retryAuth, body)
-      const retryData = await retry.json().catch(() => ({ code: 0, msg: '上游返回非 JSON 响应', data: null }))
-      return jsonResponse(retryData, corsHeaders())
-    }
-  }
-
-  return jsonResponse(data, corsHeaders())
 }
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url)
+
     if (request.method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: corsHeaders() })
+      return new Response(null, { status: 204, headers: cors() })
     }
-    if (ALLOWED_PATHS.some((path) => url.pathname.startsWith(path))) {
-      return proxyRequest(request, env)
+
+    // 只代理 /api/* 路径
+    if (!url.pathname.startsWith('/api/')) {
+      if (env.ASSETS) return env.ASSETS.fetch(request)
+      return new Response('Not Found', { status: 404 })
     }
-    // 其余请求回退到 Pages 静态资源（前端 SPA）
-    if (env.ASSETS) return env.ASSETS.fetch(request)
-    return new Response('Not Found', { status: 404 })
+
+    // 去掉 /api 前缀
+    const kqPath = url.pathname.replace(/^\/api/, '')
+    const needSign = SIGNED_PATHS.some(p => kqPath.toLowerCase() === p)
+
+    let auth
+    try {
+      auth = await login(env)
+    } catch (e) {
+      return json({ code: 0, msg: e.message, data: null }, cors())
+    }
+
+    // 构造上游 URL
+    let target = `${UPSTREAM}${kqPath}${url.search}`
+    const headers = {
+      'Accept': 'application/json',
+      'token': auth.token,
+      'user_id': auth.userId,
+      'XX-Device-Type': 'wxapp',
+      'User-Agent': WX_UA,
+      'Referer': WX_REFERER
+    }
+
+    const isPost = request.method === 'POST'
+    let body = null
+    if (isPost) {
+      body = await request.text().catch(() => '')
+      headers['Content-Type'] = 'application/x-www-form-urlencoded'
+    }
+
+    // 加签名
+    if (needSign) {
+      const ts = String(Date.now())
+      const sign = await md5hex(SIGN_SECRET + ts)
+      if (isPost) {
+        body = body ? `${body}&timestamp=${ts}&token=${sign}` : `timestamp=${ts}&token=${sign}`
+      } else {
+        target += (url.search ? '&' : '?') + `timestamp=${ts}&token=${sign}`
+      }
+    }
+
+    const resp = await fetch(target, { method: request.method, headers, body })
+    const data = await resp.json().catch(() => ({ code: 0, msg: '上游返回非 JSON', data: null }))
+
+    // 102 重登重试
+    if (data?.code !== 1 && String(data?.msg || '').includes('102')) {
+      cachedAuth = null
+      try {
+        auth = await login(env)
+        headers.token = auth.token
+        headers.user_id = auth.userId
+        const retry = await fetch(target, { method: request.method, headers, body })
+        const retryData = await retry.json().catch(() => ({}))
+        return json(retryData, cors())
+      } catch {}
+    }
+
+    return json(data, cors())
   }
 }
