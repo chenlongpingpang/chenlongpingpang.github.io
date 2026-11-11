@@ -1,5 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
+import md5 from 'blueimp-md5'
+import PlayerView from './PlayerView.vue'
 
 const appMode = ref('home')
 const keyword = ref('')
@@ -1179,29 +1181,7 @@ function changePage(next) {
 
 <template>
   <main>
-    <section v-if="appMode === 'home'" class="home-screen">
-      <h1>乒乓助手</h1>
-      <button class="home-entry" type="button" @click="enterMode('single')">
-        <strong>查询选手战绩</strong>
-        <span>查看个人场次、积分趋势与年度积分</span>
-        <i>›</i>
-      </button>
-      <button class="home-entry" type="button" @click="enterMode('tiers')">
-        <strong>单打交手分档</strong>
-        <span>按对手当前积分查看胜负分布</span>
-        <i>›</i>
-      </button>
-      <button class="home-entry" type="button" @click="enterMode('versus')">
-        <strong>双方胜率预测</strong>
-        <span>根据当前积分与历史交手估算单打胜率</span>
-        <i>›</i>
-      </button>
-      <button class="home-entry" type="button" @click="enterMode('calculator')">
-        <strong>积分预估计算</strong>
-        <span>按比赛顺序预估每盘积分变化</span>
-        <i>›</i>
-      </button>
-    </section>
+    <PlayerView v-if="appMode === 'home'" />
 
     <template v-else-if="appMode === 'single'">
       <section class="hero function-hero">
