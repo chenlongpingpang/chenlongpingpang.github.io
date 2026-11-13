@@ -1,4 +1,4 @@
-<!-- 选手详情（合并版）：输入 uid → 资料 / 积分曲线 / 交手分档 / 交手记录 -->
+<!-- 选手详情：输入 uid → 资料 / 积分曲线 / 交手记录 -->
 <template>
   <div class="pv">
     <section class="pv-hero">
@@ -70,7 +70,6 @@
         <div><span>胜</span><b class="up">{{ stats.wins }}</b></div>
         <div><span>负</span><b class="down">{{ stats.losses }}</b></div>
         <div><span>胜率</span><b>{{ stats.winRate }}%</b></div>
-        <div><span>对手</span><b>{{ stats.opponents }}</b></div>
         <div><span>赛事</span><b>{{ stats.events }}</b></div>
       </section>
 
@@ -95,27 +94,6 @@
             <text :x="chart.width - chart.right" :y="chart.height - 8" text-anchor="end">{{ chart.lastLabel }}</text>
           </g>
         </svg>
-      </section>
-
-      <section v-if="matches.length" class="tier-results">
-        <div class="section-head">
-          <h2>单打交手分档</h2>
-          <span>按对手当前实时积分分档</span>
-        </div>
-        <div class="tier-toolbar">
-          <span>共 {{ stats.opponents }} 位对手</span>
-          <button type="button" @click="downloadTierExcel">下载 Excel</button>
-        </div>
-        <div class="tier-legend"><span class="red">从未战胜</span><span class="yellow">胜率≤50%</span><span class="green">胜率&gt;50%</span></div>
-        <div v-for="band in tierBands" :key="band.label" class="tier-band">
-          <div class="tier-band-title"><strong>{{ band.label }}</strong><span>{{ band.opponents.length }} 人</span></div>
-          <div v-if="band.opponents.length" class="tier-opponents">
-            <span v-for="opponent in band.opponents" :key="opponent.uid" :class="['tier-opponent', tierColor(opponent)]">
-              {{ opponent.name }}（{{ opponent.score || '未知' }}） <b>{{ opponent.wins }}/{{ opponent.losses }}</b>
-            </span>
-          </div>
-          <div v-else class="tier-empty">—</div>
-        </div>
       </section>
 
       <section class="records">
@@ -149,7 +127,7 @@
 
       <p class="pv-note">
         数据来自开球网积分赛记录：{{ stats.events }} 场赛事<span v-if="coverage">（{{ coverage }}）</span>、{{ matches.length }} 场对局，
-        不含未计分的友谊赛、双打和团体赛；对手积分取自查询时的最新值。
+        不含未计分的友谊赛、双打和团体赛。
         <span v-if="bundle.meta.fromCache">本页来自本地缓存。</span>
       </p>
     </template>
@@ -209,78 +187,6 @@ function parseUid(value) {
 function changePage(next) {
   page.value = Math.min(totalPages.value, Math.max(1, next))
   document.querySelector('.records')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-
-/* ---------- 分档：50 分一档，列出每位对手及其胜负 ---------- */
-
-const tierBands = computed(() => {
-  const bands = [{ label: '2000以上', min: 2000, max: Infinity }]
-  for (let upper = 2000; upper > 600; upper -= 50) {
-    bands.push({ label: `${upper - 50}-${upper}`, min: upper - 50, max: upper })
-  }
-  bands.push({ label: '600以下', min: -Infinity, max: 600 })
-  bands.push({ label: '实时积分未知', min: null, max: null })
-
-  const byOpponent = new Map()
-  for (const match of matches.value) {
-    const entry = byOpponent.get(match.oppUid) || {
-      uid: match.oppUid,
-      name: match.oppName || `用户 ${match.oppUid}`,
-      score: null,
-      wins: 0,
-      losses: 0,
-      games: 0
-    }
-    entry.games += 1
-    if (match.win) entry.wins += 1
-    else entry.losses += 1
-    if (Number(match.oppRating) > 0) entry.score = Number(match.oppRating)
-    byOpponent.set(match.oppUid, entry)
-  }
-
-  return bands.map((band) => {
-    const opponents = [...byOpponent.values()].filter((opponent) => {
-      if (band.min === null) return !opponent.score
-      if (!opponent.score) return false
-      return opponent.score >= band.min && opponent.score <= band.max
-    })
-    opponents.sort((a, b) => b.games - a.games || (b.score || 0) - (a.score || 0) || a.name.localeCompare(b.name, 'zh-CN'))
-    return { ...band, opponents }
-  })
-})
-
-function tierWinRate(opponent) {
-  const decided = opponent.wins + opponent.losses
-  return decided ? opponent.wins / decided : 0
-}
-
-function tierColor(opponent) {
-  if (!opponent.wins) return 'red'
-  return tierWinRate(opponent) <= 0.5 ? 'yellow' : 'green'
-}
-
-async function downloadTierExcel() {
-  if (!matches.value.length) return
-  try {
-    const module = await import('xlsx-js-style')
-    const XLSX = module.default || module
-    const groups = tierBands.value
-    const maxItems = Math.max(...groups.map((group) => group.opponents.length), 1)
-    const rows = groups.map((group) => [
-      group.label,
-      ...group.opponents.map((opponent) => `${opponent.name}（${opponent.score || '未知'}） ${opponent.wins}/${opponent.losses}`),
-      ...Array(Math.max(0, maxItems - group.opponents.length)).fill('')
-    ])
-    const sheet = XLSX.utils.aoa_to_sheet([
-      ['积分段', ...Array.from({ length: maxItems }, (_, index) => `对手${index + 1}`)],
-      ...rows
-    ])
-    const book = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(book, sheet, '交手分档')
-    XLSX.writeFile(book, `${selfName.value}-交手分档.xlsx`)
-  } catch (err) {
-    error.value = `导出失败：${err.message}`
-  }
 }
 
 /* ---------- 积分曲线 ---------- */
@@ -424,7 +330,7 @@ async function chooseCandidate(user) {
 .pv-meta { margin: 5px 0 0; font-size: 12px; opacity: .9; }
 .pv-career { margin: 0 0 4px; font-size: 12px; opacity: .9; }
 
-.pv-stats { padding: 14px 8px; display: grid; grid-template-columns: repeat(6, 1fr); border-bottom: 1px solid #eee; }
+.pv-stats { padding: 14px 8px; display: grid; grid-template-columns: repeat(5, 1fr); border-bottom: 1px solid #eee; }
 .pv-stats > div { min-width: 0; text-align: center; }
 .pv-stats span { display: block; color: #999; font-size: 10px; }
 .pv-stats b { display: block; margin-top: 5px; color: #444; font-size: 18px; }
