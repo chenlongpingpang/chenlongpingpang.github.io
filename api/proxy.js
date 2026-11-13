@@ -295,7 +295,7 @@ async function buildPlayer(uid) {
       careerWin: Number(profile?.win) || null,
       careerLose: Number(profile?.lose) || null
     },
-    meta: { generatedAt: new Date().toISOString(), elapsedMs: Date.now() - startedAt, fromCache: false }
+    meta: { generatedAt: new Date().toISOString(), elapsedMs: Date.now() - startedAt, fromCache: false, build: 'full-games-v2' }
   }
 }
 
