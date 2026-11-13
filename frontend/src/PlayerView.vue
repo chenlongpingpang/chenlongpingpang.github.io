@@ -67,21 +67,22 @@
         <div class="scope-bar">
           <span>比赛统计</span>
           <div class="scope-tabs" aria-label="统计时间范围">
-            <button :class="{ active: statScope === 'all' }" @click="statScope = 'all'">全部</button>
-            <button :class="{ active: statScope === 'year' }" @click="statScope = 'year'">近一年</button>
+            <button :class="{ active: statScope === 'all' }" @click="setScope('all')">全部</button>
+            <button :class="{ active: statScope === 'year' }" @click="setScope('year')">近一年</button>
+            <button :class="{ active: statScope === 'recent40' }" @click="setScope('recent40')">近40场</button>
           </div>
         </div>
         <div class="stats-head"><span>类型</span><span>总数</span><span>胜场</span><span>败场</span></div>
         <div v-for="row in statRows" :key="row.label" class="stats-row">
           <strong>{{ row.label }}</strong>
           <b>{{ row.total }}</b>
-          <b class="positive">{{ row.wins }}</b>
-          <b class="negative">{{ row.losses }}</b>
+          <b>{{ row.wins }}</b>
+          <b>{{ row.losses }}</b>
         </div>
 
         <div v-if="trendChart" class="score-trend">
           <div class="trend-heading">
-            <h3>{{ selfName }}{{ statScope === 'year' ? '近一年' : '全部' }}单打积分趋势</h3>
+            <h3>{{ selfName }}{{ scopeLabel }}单打积分趋势</h3>
             <span>{{ trendChart.recordCount }} 场</span>
           </div>
           <svg
@@ -264,7 +265,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { fetchUpstream } from './api.js'
 
 const uidInput = ref('')
@@ -294,11 +295,26 @@ const oneYearCutoff = computed(() => {
   ].join('-')
 })
 
+const scopeLabel = computed(() => statScope.value === 'year' ? '近一年' : statScope.value === 'recent40' ? '近40场' : '全部')
+
 const scopedRecords = computed(() => {
-  return statScope.value === 'year'
-    ? matches.value.filter(record => String(record.date || '') >= oneYearCutoff.value)
-    : matches.value
+  if (statScope.value === 'year') {
+    return matches.value.filter(record => String(record.date || '') >= oneYearCutoff.value)
+  }
+  if (statScope.value === 'recent40') {
+    return [...matches.value]
+      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
+      .slice(0, 40)
+  }
+  return matches.value
 })
+
+function setScope(scope) {
+  statScope.value = scope
+  page.value = 1
+}
+
+watch(statScope, () => { page.value = 1 })
 
 const totalPages = computed(() => Math.max(1, Math.ceil(scopedRecords.value.length / pageSize)))
 const visibleRecords = computed(() => {

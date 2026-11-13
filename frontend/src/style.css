@@ -130,7 +130,7 @@ h1 { margin: 20px 0 26px; font-size: 32px; text-align: center; }
 .scope-bar { padding: 10px 14px; border-top: 1px solid rgba(255,255,255,.5); display: flex; align-items: center; justify-content: space-between; }
 .scope-bar > span { font-weight: 700; }
 .scope-tabs { display: flex; border: 1px solid #fff; }
-.scope-tabs button { min-height: 34px; padding: 0 17px; border: 0; color: #fff; background: transparent; font-size: 13px; }
+.scope-tabs button { min-height: 34px; padding: 0 12px; border: 0; color: #fff; background: transparent; font-size: 12px; }
 .scope-tabs button.active { color: var(--blue); background: #fff; }
 .stats-head, .stats-row { margin: 0 12px; display: grid; grid-template-columns: 1.2fr repeat(3, 1fr); align-items: center; text-align: center; }
 .stats-head { min-height: 34px; border-bottom: 1px solid rgba(255,255,255,.55); font-size: 12px; }
