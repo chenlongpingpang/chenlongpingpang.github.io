@@ -104,6 +104,14 @@
               :y2="trendChart.height - trendChart.bottom"
             />
             <polyline class="trend-line" :points="trendChart.points" />
+            <circle
+              v-for="(p, i) in trendChart.pointList"
+              :key="i"
+              :cx="p.x"
+              :cy="p.y"
+              r="2"
+              class="trend-dot"
+            />
             <g class="trend-dates">
               <g v-for="tick in trendChart.xTicks" :key="`${tick.date}-${tick.x}`">
                 <line :x1="tick.x" :x2="tick.x" :y1="trendChart.height - trendChart.bottom" :y2="trendChart.height - trendChart.bottom + 5" />
@@ -350,13 +358,13 @@ const statRows = computed(() => [
 
 const trendChart = computed(() => {
   if (!bundle.value) return null
-  const records = scopedRecords.value.filter(record => !record.doubles && isSettledScoreChange(record.scoreChange))
+  const records = scopedRecords.value.filter(record => !record.doubles)
   let running = numberValue(profile.value.score)
 
   let series = []
   if (running !== null && records.length) {
     const reversedTrace = records.map(record => {
-      const delta = numberValue(record.scoreChange)
+      const delta = numberValue(record.scoreChange) ?? 0
       const after = running
       const before = running - delta
       running = before
@@ -409,6 +417,7 @@ const trendChart = computed(() => {
   return {
     width, height, left, right, top, bottom,
     points: points.map(point => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' '),
+    pointList: points,
     yTicks, xTicks, maxPoint, minPoint, currentPoint,
     recordCount: records.length
   }

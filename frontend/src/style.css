@@ -148,6 +148,7 @@ h1 { margin: 20px 0 26px; font-size: 32px; text-align: center; }
 .trend-axis, .trend-dates line { stroke: #888; stroke-width: 1; }
 .trend-line { fill: none; stroke: #079ddd; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .trend-mark circle { fill: #079ddd; }
+.trend-dot { fill: #079ddd; }
 .trend-mark text { fill: #079ddd; font-size: 10px; }
 .trend-mark.current text { font-size: 11px; }
 .updated-at { margin: 0; padding: 16px 8px 12px; text-align: center; font-size: 12px; }
