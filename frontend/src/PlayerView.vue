@@ -123,14 +123,20 @@
               :y2="trendChart.height - trendChart.bottom"
             />
             <polyline class="trend-line" :points="trendChart.points" />
-            <circle
+            <g
               v-for="(p, i) in trendChart.pointList"
               :key="i"
-              :cx="p.x"
-              :cy="p.y"
-              r="2"
-              class="trend-dot"
-            />
+              class="trend-dot-wrap"
+              @click="selectPoint(p)"
+            >
+              <circle :cx="p.x" :cy="p.y" r="2" class="trend-dot" />
+              <circle :cx="p.x" :cy="p.y" r="10" fill="transparent" />
+            </g>
+            <g v-if="selectedPoint" class="trend-tip">
+              <circle :cx="selectedPoint.x" :cy="selectedPoint.y" r="4" class="trend-tip-dot" />
+              <text :x="selectedPoint.x" :y="selectedPoint.y - 10" text-anchor="middle" class="tip-score">{{ selectedPoint.score }}</text>
+              <text :x="selectedPoint.x" :y="selectedPoint.y + 21" text-anchor="middle" class="tip-date">{{ selectedPoint.date }}</text>
+            </g>
             <g class="trend-dates">
               <g v-for="tick in trendChart.xTicks" :key="`${tick.date}-${tick.x}`">
                 <line :x1="tick.x" :x2="tick.x" :y1="trendChart.height - trendChart.bottom" :y2="trendChart.height - trendChart.bottom + 5" />
@@ -159,7 +165,10 @@
       <section class="records">
         <div class="section-head">
           <h2>交手记录</h2>
-          <span>{{ loading ? `已加载 ${scopedRecords.length} 场` : `共 ${scopedRecords.length} 场` }}</span>
+          <span>{{ loading ? `已加载 ${filteredRecords.length} 场` : `共 ${filteredRecords.length} 场` }}</span>
+        </div>
+        <div class="record-search">
+          <input v-model="opponentFilter" type="search" placeholder="搜索对手名字筛选场次" />
         </div>
 
         <div v-if="visibleRecords.length" class="table-wrap">
@@ -177,7 +186,7 @@
             </tbody>
           </table>
         </div>
-        <div v-else class="empty">没有查询到该时间范围内的交手记录</div>
+        <div v-else class="empty">{{ opponentFilter.trim() ? '没有匹配该对手名字的场次' : '没有查询到该时间范围内的交手记录' }}</div>
 
         <div v-if="totalPages > 1" class="pager">
           <button :disabled="page === 1" @click="changePage(page - 1)">上一页</button>
@@ -307,6 +316,8 @@ const rangeStartIdx = ref(0)
 const rangeEndIdx = ref(0)
 const annualScoreOpen = ref(false)
 const annualDetail = ref('overview')
+const opponentFilter = ref('')
+const selectedPoint = ref(null)
 const pageSize = 20
 
 const profile = computed(() => bundle.value?.profile || {})
@@ -384,14 +395,32 @@ function onEndInput(event) {
 
 watch(bundle, () => {
   page.value = 1
+  opponentFilter.value = ''
+  selectedPoint.value = null
   resetRange()
 })
 
-const totalPages = computed(() => Math.max(1, Math.ceil(scopedRecords.value.length / pageSize)))
+const filteredRecords = computed(() => {
+  const keyword = opponentFilter.value.trim().toLowerCase()
+  if (!keyword) return scopedRecords.value
+  return scopedRecords.value.filter(record => {
+    const name = `${record.opponentName || ''} ${record.opponentTeammateName || ''}`.toLowerCase()
+    return name.includes(keyword)
+  })
+})
+
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredRecords.value.length / pageSize)))
 const visibleRecords = computed(() => {
   const start = (page.value - 1) * pageSize
-  return scopedRecords.value.slice(start, start + pageSize)
+  return filteredRecords.value.slice(start, start + pageSize)
 })
+
+function selectPoint(point) {
+  selectedPoint.value = point
+}
+
+watch(opponentFilter, () => { page.value = 1 })
+watch(scopedRecords, () => { selectedPoint.value = null })
 
 function numberValue(value) {
   const text = String(value ?? '').replace('+', '').trim()

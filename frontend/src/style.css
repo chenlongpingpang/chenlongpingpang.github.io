@@ -162,6 +162,10 @@ h1 { margin: 20px 0 26px; font-size: 32px; text-align: center; }
 .trend-line { fill: none; stroke: #079ddd; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .trend-mark circle { fill: #079ddd; }
 .trend-dot { fill: #079ddd; }
+.trend-dot-wrap { cursor: pointer; }
+.trend-tip-dot { fill: #079ddd; stroke: #fff; stroke-width: 1.5; }
+.trend-tip .tip-score { fill: #079ddd; font-size: 10px; font-weight: 700; }
+.trend-tip .tip-date { fill: #888; font-size: 8px; }
 .trend-mark text { fill: #079ddd; font-size: 10px; }
 .trend-mark.current text { font-size: 11px; }
 .updated-at { margin: 0; padding: 16px 8px 12px; text-align: center; font-size: 12px; }
@@ -204,6 +208,8 @@ h1 { margin: 20px 0 26px; font-size: 32px; text-align: center; }
 .annual-note { margin: 12px 0 0; color: #777; font-size: 12px; line-height: 1.7; }
 
 .records { margin-top: 0; padding-top: 14px; }
+.record-search { margin: 6px 0 10px; }
+.record-search input { width: 100%; min-height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; font-size: 14px; box-sizing: border-box; }
 .calculator-hero { text-align: center; }
 .tier-hero { text-align: center; }
 .tier-hero p { margin: 0 0 14px; font-size: 13px; }
