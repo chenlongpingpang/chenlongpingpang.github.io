@@ -175,24 +175,43 @@ async function fetchAllGames(uid, titleMap) {
 
   const matches = []
   const seenGame = new Set()
+  const scoreMap = new Map()
+  const reasons = { bye: 0, notSelf: 0, noOpp: 0, double: 0, unparsable: 0, duplicate: 0, valid: 0 }
   let selfName = ''
   for (const g of all) {
-    if (!g || String(g.flag) === '1') continue
+    if (!g || String(g.flag) === '1') { reasons.bye++; continue }
     const isFirst = String(g.uid1) === String(uid)
     const isSecond = String(g.uid2) === String(uid)
-    if (!isFirst && !isSecond) continue
+    if (!isFirst && !isSecond) { reasons.notSelf++; continue }
     const oppUid = isFirst ? String(g.uid2) : String(g.uid1)
-    if (!oppUid || oppUid === '0') continue
+    if (!oppUid || oppUid === '0') { reasons.noOpp++; continue }
+    // 双打：队友位 uid11/uid22 非 0，官方生涯统计只计单打
+    if (String(g.uid11) !== '0' || String(g.uid22) !== '0') { reasons.double++; continue }
     const myName = isFirst ? g.username1 : g.username2
     if (!selfName && myName) selfName = myName
     const myScore = Number(String(isFirst ? g.result1 : g.result2).replace(/[^\d]/g, '') || '')
     const oppScoreText = String(isFirst ? g.result2 : g.result1).replace(/[^\d]/g, '')
-    if (!Number.isFinite(myScore) || !oppScoreText) continue
+    if (!Number.isFinite(myScore) || !oppScoreText) { reasons.unparsable++; continue }
     const oppScore = Number(oppScoreText)
-    if (!Number.isFinite(oppScore)) continue
+    if (!Number.isFinite(oppScore)) { reasons.unparsable++; continue }
     const dedupeKey = [g.gameid, g.uid1, g.uid2, myScore, oppScore].join('|')
-    if (seenGame.has(dedupeKey)) continue
+    if (seenGame.has(dedupeKey)) { reasons.duplicate++; continue }
     seenGame.add(dedupeKey)
+    reasons.valid++
+
+    // 本人赛后积分快照：仅方1行归属明确，按赛事去重取较新一场，供全量积分曲线
+    if (isFirst) {
+      const sc = Number(g.ascore1)
+      if (Number.isFinite(sc) && sc > 0) {
+        const aid = String(g.eventid || '')
+        const rawDate = String(g.dateline || '')
+        const prev = scoreMap.get(aid)
+        if (!prev || rawDate >= prev.rawDate) {
+          scoreMap.set(aid, { eventid: aid, rawDate, date: formatDate(rawDate), score: sc })
+        }
+      }
+    }
+
     const rawDate = String(g.dateline || '')
     matches.push({
       date: formatDate(rawDate),
@@ -209,7 +228,8 @@ async function fetchAllGames(uid, titleMap) {
   }
 
   matches.sort((a, b) => (a.rawDate < b.rawDate ? 1 : a.rawDate > b.rawDate ? -1 : 0))
-  return { matches, selfName }
+  const gameCurve = [...scoreMap.values()]
+  return { matches, selfName, gameCurve, reasons, totalRows: all.length }
 }
 
 async function buildPlayer(uid) {
@@ -243,16 +263,24 @@ async function buildPlayer(uid) {
     if (event.eventid) titleMap.set(String(event.eventid), event.title || '')
   }
 
-  const { matches, selfName: gamesSelfName } = await fetchAllGames(uid, titleMap)
+  const { matches, selfName: gamesSelfName, gameCurve, reasons, totalRows } = await fetchAllGames(uid, titleMap)
 
   const wins = matches.filter((m) => m.win).length
   const losses = matches.length - wins
   const opponentUids = [...new Set(matches.map((m) => m.oppUid))]
 
-  const curve = uniqueEvents
+  // 全量积分曲线：优先取对局赛后积分快照（覆盖账号全部历史），回填赛事标题
+  const fallbackCurve = uniqueEvents
     .filter((event) => Number.isFinite(event.score))
     .sort((a, b) => (a.rawDate < b.rawDate ? -1 : a.rawDate > b.rawDate ? 1 : 0))
     .map((event) => ({ date: event.date, score: event.score, title: event.title }))
+
+  const fullCurve = gameCurve
+    .map((p) => ({ date: p.date, rawDate: p.rawDate, score: p.score, title: titleMap.get(p.eventid) || '' }))
+    .sort((a, b) => (a.rawDate < b.rawDate ? -1 : a.rawDate > b.rawDate ? 1 : 0))
+    .map(({ date, score, title }) => ({ date, score, title }))
+
+  const curve = fullCurve.length ? fullCurve : fallbackCurve
 
   const scoreOf = (p) => {
     const v = Number(p?.score)
@@ -290,12 +318,12 @@ async function buildPlayer(uid) {
       losses,
       winRate: matches.length ? Number(((wins / matches.length) * 100).toFixed(1)) : 0,
       opponents: opponentUids.length,
-      events: uniqueEvents.length,
+      events: curve.length,
       careerTotal: Number(profile?.total) || null,
       careerWin: Number(profile?.win) || null,
       careerLose: Number(profile?.lose) || null
     },
-    meta: { generatedAt: new Date().toISOString(), elapsedMs: Date.now() - startedAt, fromCache: false, build: 'full-games-v2' }
+    meta: { generatedAt: new Date().toISOString(), elapsedMs: Date.now() - startedAt, fromCache: false, build: 'full-curve-v3', debug: { reasons, totalRows } }
   }
 }
 

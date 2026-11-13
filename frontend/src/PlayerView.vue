@@ -66,10 +66,10 @@
       </section>
 
       <section class="pv-stats">
-        <div><span>收录场次</span><b>{{ stats.matches }}</b></div>
-        <div><span>胜</span><b class="up">{{ stats.wins }}</b></div>
-        <div><span>负</span><b class="down">{{ stats.losses }}</b></div>
-        <div><span>胜率</span><b>{{ stats.winRate }}%</b></div>
+        <div><span>生涯场次</span><b>{{ show(profile.total) }}</b></div>
+        <div><span>胜</span><b class="up">{{ show(profile.win) }}</b></div>
+        <div><span>负</span><b class="down">{{ show(profile.lose) }}</b></div>
+        <div><span>胜率</span><b>{{ profile.rate || '-' }}</b></div>
         <div><span>赛事</span><b>{{ stats.events }}</b></div>
       </section>
 
@@ -99,7 +99,7 @@
       <section class="records">
         <div class="section-head">
           <h2>交手记录</h2>
-          <span>共 {{ matches.length }} 场</span>
+          <span>逐场记录 {{ matches.length }} 条</span>
         </div>
 
         <div v-if="visibleMatches.length" class="table-wrap">
@@ -126,8 +126,8 @@
       </section>
 
       <p class="pv-note">
-        数据来自开球网积分赛记录：{{ stats.events }} 场赛事<span v-if="coverage">（{{ coverage }}）</span>、{{ matches.length }} 场对局，
-        不含未计分的友谊赛、双打和团体赛。
+        生涯战绩取自官方选手资料；下方为逐场对局记录（{{ matches.length }} 条），覆盖 {{ stats.events }} 场赛事{{ coverage ? `（${coverage}）` : '' }}，
+        不含未计分的友谊赛、双打和团体赛，个别轮空或弃权场次可能仍列在记录中。
         <span v-if="bundle.meta.fromCache">本页来自本地缓存。</span>
       </p>
     </template>
