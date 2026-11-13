@@ -10,13 +10,31 @@
           type="text"
           inputmode="numeric"
           autocomplete="off"
-          placeholder="uid 或选手主页链接，如 404523"
+          placeholder="uid 或姓名，如 404523 / 郭永帅"
           :disabled="loading"
         >
         <button :disabled="loading">{{ loading ? '查询中' : '查询' }}</button>
       </form>
       <p class="pv-tip">uid 可在官方 App 选手资料页看到；首次查询约 5-10 秒，之后走本地缓存秒开</p>
       <p v-if="error" class="pv-error">{{ error }}</p>
+    </section>
+
+    <section v-if="candidates.length" class="pv-candidates">
+      <p class="pv-cand-title">找到 {{ candidates.length }} 位选手，点击查看战绩</p>
+      <button
+        v-for="user in candidates"
+        :key="user.uid"
+        type="button"
+        class="pv-cand"
+        @click="chooseCandidate(user)"
+      >
+        <span class="pv-cand-name">{{ user.realname || user.username2 || '未命名' }}</span>
+        <span class="pv-cand-meta">
+          ID {{ user.uid }}
+          <span v-if="user.resideprovince"> · {{ user.resideprovince }}{{ user.residecity }}</span>
+          <span v-if="user.score"> · 积分 {{ user.score }}</span>
+        </span>
+      </button>
     </section>
 
     <section v-if="loading" class="loading-card pv-loading">
@@ -147,6 +165,7 @@ const loading = ref(false)
 const loadingText = ref('正在登录并读取积分流水…')
 const error = ref('')
 const bundle = ref(null)
+const candidates = ref([])
 const page = ref(1)
 const pageSize = 20
 
@@ -309,12 +328,7 @@ const chart = computed(() => {
   }
 })
 
-async function query() {
-  const uid = parseUid(uidInput.value)
-  if (!uid) {
-    error.value = '请输入数字 uid，例如 404523'
-    return
-  }
+async function loadPlayer(uid) {
   loading.value = true
   error.value = ''
   loadingText.value = '正在登录并读取积分流水…'
@@ -334,6 +348,50 @@ async function query() {
     loading.value = false
   }
 }
+
+async function searchByName(keyword) {
+  loading.value = true
+  error.value = ''
+  candidates.value = []
+  try {
+    const res = await fetchUpstream('/user/lists', { key: keyword, page: 1 })
+    const rows = Array.isArray(res?.data?.data) ? res.data.data : []
+    if (!rows.length) {
+      error.value = `未找到“${keyword}”相关选手，换个名字或直接输入 uid`
+      return
+    }
+    if (rows.length === 1) {
+      await loadPlayer(String(rows[0].uid))
+    } else {
+      candidates.value = rows.slice(0, 20)
+    }
+  } catch (err) {
+    error.value = err.message
+  } finally {
+    loading.value = false
+  }
+}
+
+async function query() {
+  const raw = String(uidInput.value || '').trim()
+  if (!raw) {
+    error.value = '请输入 uid 或姓名，例如 404523 或 郭永帅'
+    return
+  }
+  candidates.value = []
+  const uid = parseUid(raw)
+  if (uid) {
+    await loadPlayer(uid)
+  } else {
+    await searchByName(raw)
+  }
+}
+
+async function chooseCandidate(user) {
+  candidates.value = []
+  uidInput.value = user.realname || user.username2 || ''
+  await loadPlayer(String(user.uid))
+}
 </script>
 
 <style scoped>
@@ -348,6 +406,13 @@ async function query() {
 .pv-search button:disabled { opacity: .6; }
 .pv-tip { margin: 9px 0 0; font-size: 11px; line-height: 1.6; opacity: .85; }
 .pv-error { margin: 10px 0 0; padding: 8px; color: #8c2020; background: #fff; font-size: 13px; }
+
+.pv-candidates { margin: 14px 18px 0; display: flex; flex-direction: column; gap: 8px; }
+.pv-cand-title { margin: 0 0 2px; font-size: 13px; color: #666; }
+.pv-cand { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border: 1px solid #e3eef5; border-radius: 10px; background: #fff; text-align: left; }
+.pv-cand:active { background: #f0f8fc; }
+.pv-cand-name { font-size: 15px; font-weight: 700; color: #222; }
+.pv-cand-meta { font-size: 12px; color: #888; }
 
 .pv-loading { margin-top: 14px; }
 
