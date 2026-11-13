@@ -130,3 +130,7 @@ dist
 .pnp.*
 proxy/cache/
 proxy/*.log
+
+# 根目录旧 build 产物（由 GitHub Actions 从 frontend/dist 部署）
+/index.html
+/assets/
