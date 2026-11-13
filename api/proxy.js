@@ -1,10 +1,14 @@
 /**
- * 乒乓助手 · 开球网鉴权代理（Vercel Serverless Function）
+ * 乒乓助手 · 开球网聚合代理（Vercel Serverless Function）
  *
- * 前端调 /api/<开球网路径>，本函数自动：
- *   1. 登录拿 token（内存缓存 30 分钟）
- *   2. 对 /user/lists、/user/getgames 自动加 MD5 签名
- *   3. 带 token / user_id / 微信 UA 转发到开球网
+ * 路由：
+ *   GET  /api/player?uid=xxx   聚合返回选手资料 / 积分曲线 / 逐场对局 / 统计
+ *   GET  /api/<开球网路径>      透传（自动登录、签名、带微信 header）
+ *
+ * 聚合策略（复用本地已验证方案）：
+ *   - getUserScores 拿积分流水（赛事 + itemid）
+ *   - Match/getResult 逐赛事并发拉对局，重建战绩
+ *   - adv_profile 已被上游 102 拦截，仅作容错补充，失败不影响主流程
  *
  * 环境变量（Vercel Project Settings → Environment Variables）：
  *   KQ_ACCOUNT  开球网登录账号
@@ -16,6 +20,7 @@ import crypto from 'crypto'
 
 const DEFAULT_UPSTREAM = 'https://kaiqiuwang.cc/xcx/public/index.php/api'
 const TOKEN_TTL = 30 * 60 * 1000
+const CONCURRENCY = 12
 const SIGN_SECRET = 'e8b7a4e1-06d3-4e0b-95cf-9f0450072389'
 const SIGNED_PATHS = ['/user/lists', '/user/getgames']
 const WX_UA = 'Mozilla/5.0 (iPad; CPU OS 26_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.76(0x18004c3a) NetType/WIFI Language/zh_CN'
@@ -30,7 +35,7 @@ function md5(s) {
 async function login() {
   if (cachedAuth && Date.now() < cachedAuth.expiresAt) return cachedAuth
   if (!process.env.KQ_ACCOUNT) throw new Error('未配置 KQ_ACCOUNT')
-  const upstream = (process.env.KQ_UPSTREAM || DEFAULT_UPSTREAM).replace(/\/$/, '')
+  const upstream = DEFAULT_UPSTREAM.replace(/\/$/, '')
   const body = new URLSearchParams({
     account: process.env.KQ_ACCOUNT,
     password: process.env.KQ_PASSWORD,
@@ -48,6 +53,223 @@ async function login() {
   return cachedAuth
 }
 
+async function requestUpstream(pathWithQuery, { method = 'GET', body, auth } = {}) {
+  const pathOnly = pathWithQuery.split('?')[0]
+  const needSign = SIGNED_PATHS.some(p => pathOnly.toLowerCase() === p)
+
+  const headers = {
+    Accept: 'application/json',
+    'XX-Device-Type': 'wxapp',
+    'User-Agent': WX_UA,
+    Referer: WX_REFERER
+  }
+  if (auth?.token) headers.token = auth.token
+  if (auth?.userId) headers.user_id = auth.userId
+
+  let finalUrl = `${DEFAULT_UPSTREAM}${pathWithQuery}`
+  let finalBody = body
+
+  if (needSign) {
+    const ts = String(Date.now())
+    const sign = md5(SIGN_SECRET + ts)
+    if (method === 'GET') {
+      const sep = pathWithQuery.includes('?') ? '&' : '?'
+      finalUrl = `${finalUrl}${sep}timestamp=${ts}&token=${sign}`
+    } else {
+      const suffix = `timestamp=${ts}&token=${sign}`
+      finalBody = body ? `${body}&${suffix}` : suffix
+      headers['Content-Type'] = 'application/x-www-form-urlencoded'
+    }
+  } else if (body) {
+    headers['Content-Type'] = 'application/x-www-form-urlencoded'
+  }
+
+  const resp = await fetch(finalUrl, { method, headers, body: finalBody })
+  return resp.json().catch(() => ({ code: 0, msg: '上游返回非 JSON', data: null }))
+}
+
+async function apiGet(pathWithQuery) {
+  const auth = await login()
+  let data = await requestUpstream(pathWithQuery, { auth })
+  if (data?.code !== 1 && String(data?.msg || '').includes('102')) {
+    cachedAuth = null
+    const retryAuth = await login()
+    data = await requestUpstream(pathWithQuery, { auth: retryAuth })
+  }
+  return data
+}
+
+async function pool(items, worker, limit = CONCURRENCY) {
+  const out = new Array(items.length)
+  let cursor = 0
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const index = cursor++
+      if (index >= items.length) return
+      try { out[index] = await worker(items[index], index) } catch { out[index] = null }
+    }
+  })
+  await Promise.all(runners)
+  return out
+}
+
+function formatDate(raw) {
+  const text = String(raw || '').replace(/\D/g, '')
+  if (text.length !== 8) return String(raw || '')
+  return `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}`
+}
+
+/* ---------------- 聚合：选手整包 ---------------- */
+
+async function getProfile(uid) {
+  const res = await apiGet(`/User/adv_profile?uid=${uid}`)
+  if (res?.code !== 1 || !res.data) return null
+  return res.data
+}
+
+async function buildPlayer(uid) {
+  const startedAt = Date.now()
+
+  const [profile, scoresRes] = await Promise.all([
+    getProfile(uid).catch(() => null),
+    apiGet(`/User/getUserScores?uid=${uid}`)
+  ])
+
+  const events = Array.isArray(scoresRes?.data) ? scoresRes.data : []
+  if (!profile && !events.length) {
+    return { error: '没有查到该 uid 的数据，请确认 uid 是否正确' }
+  }
+
+  const seenEvent = new Set()
+  const uniqueEvents = []
+  for (const event of events) {
+    const key = `${event.eventid}:${event.itemid}`
+    if (seenEvent.has(key)) continue
+    seenEvent.add(key)
+    uniqueEvents.push({
+      eventid: String(event.eventid || ''),
+      itemid: String(event.itemid || ''),
+      date: formatDate(event.dateline),
+      rawDate: String(event.dateline || ''),
+      score: Number(event.postscore),
+      title: event.title || '',
+      city: [event.province, event.city].filter(Boolean).join('·'),
+      location: event.location || ''
+    })
+  }
+
+  const results = await pool(uniqueEvents, async (event) => {
+    if (!event.eventid || !event.itemid) return null
+    const res = await apiGet(`/Match/getResult?eventid=${event.eventid}&itemid=${event.itemid}`)
+    if (res?.code !== 1) return null
+    return res.data?.ttgames?.[event.itemid] || null
+  })
+
+  const matches = []
+  const seenGame = new Set()
+  let selfName = ''
+  results.forEach((rounds, index) => {
+    const event = uniqueEvents[index]
+    if (!Array.isArray(rounds)) return
+    for (const round of rounds) {
+      const roundName = round?.roundname || ''
+      for (const game of round?.games || []) {
+        if (!game) continue
+        if (String(game.flag) === '1') continue
+        const isFirst = String(game.uid1) === String(uid)
+        const isSecond = String(game.uid2) === String(uid)
+        if (!isFirst && !isSecond) continue
+        const opponentUid = isFirst ? String(game.uid2) : String(game.uid1)
+        if (!opponentUid || opponentUid === '0') continue
+        const myName = isFirst ? game.username1 : game.username2
+        if (!selfName && myName) selfName = myName
+        const myScore = Number(String(isFirst ? game.result1 : game.result2).replace(/[^\d]/g, '') || '')
+        const oppScoreText = String(isFirst ? game.result2 : game.result1).replace(/[^\d]/g, '')
+        if (!Number.isFinite(myScore) || !oppScoreText) continue
+        const oppScore = Number(oppScoreText)
+        if (!Number.isFinite(oppScore)) continue
+        const dedupeKey = [event.eventid, event.itemid, roundName, game.uid1, game.uid2, myScore, oppScore].join('|')
+        if (seenGame.has(dedupeKey)) continue
+        seenGame.add(dedupeKey)
+        matches.push({
+          date: event.date,
+          rawDate: event.rawDate,
+          title: event.title,
+          round: roundName,
+          oppUid: opponentUid,
+          oppName: isFirst ? game.username2 || '' : game.username1 || '',
+          myScore,
+          oppScore,
+          win: myScore > oppScore,
+          oppRating: null
+        })
+      }
+    }
+  })
+
+  matches.sort((a, b) => (a.rawDate < b.rawDate ? 1 : a.rawDate > b.rawDate ? -1 : 0))
+
+  const wins = matches.filter((m) => m.win).length
+  const losses = matches.length - wins
+  const opponentUids = [...new Set(matches.map((m) => m.oppUid))]
+
+  const curve = uniqueEvents
+    .filter((event) => Number.isFinite(event.score))
+    .sort((a, b) => (a.rawDate < b.rawDate ? -1 : a.rawDate > b.rawDate ? 1 : 0))
+    .map((event) => ({ date: event.date, score: event.score, title: event.title }))
+
+  const scoreOf = (p) => {
+    const v = Number(p?.score)
+    return Number.isFinite(v) && v > 0 ? v : null
+  }
+  const latestScore = curve.length ? curve[curve.length - 1].score : null
+
+  return {
+    uid: String(uid),
+    profile: {
+      name: profile?.realname || profile?.username || selfName || '',
+      nickname: profile?.username || selfName || '',
+      score: scoreOf(profile) ?? latestScore,
+      maxScore: Number(profile?.maxscore) || null,
+      yearMaxScore: Number(profile?.maxScoreTheYear) || null,
+      last12MaxScore: Number(profile?.maxscore12month) || null,
+      win: Number(profile?.win) || null,
+      lose: Number(profile?.lose) || null,
+      total: Number(profile?.total) || null,
+      rate: Number(profile?.total) > 0 ? ((Number(profile.win) / Number(profile.total)) * 100).toFixed(1) + '%' : '',
+      rank: profile?.rank || '',
+      province: profile?.province || '',
+      city: profile?.city || '',
+      age: profile?.age || '',
+      sex: profile?.sex || '',
+      qiupai: profile?.qiupai || '',
+      brand: profile?.brand || ''
+    },
+    curve,
+    matches,
+    stats: {
+      matches: matches.length,
+      wins,
+      losses,
+      winRate: matches.length ? Number(((wins / matches.length) * 100).toFixed(1)) : 0,
+      opponents: opponentUids.length,
+      events: uniqueEvents.length,
+      careerTotal: Number(profile?.total) || null,
+      careerWin: Number(profile?.win) || null,
+      careerLose: Number(profile?.lose) || null
+    },
+    meta: { generatedAt: new Date().toISOString(), elapsedMs: Date.now() - startedAt, fromCache: false }
+  }
+}
+
+/* ---------------- HTTP ---------------- */
+
+function sendJson(res, payload, status = 200) {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8')
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.status(status).json(payload)
+}
+
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*')
@@ -59,72 +281,38 @@ export default async function handler(req, res) {
   }
 
   const url = new URL(req.url, 'http://local')
-  // 去掉 /api 前缀
   const kqPath = url.pathname.replace(/^\/api/, '')
-  const needSign = SIGNED_PATHS.some(p => kqPath.toLowerCase() === p)
 
+  // 聚合接口
+  if (kqPath === '/player') {
+    const uid = String(url.searchParams.get('uid') || '').replace(/\D/g, '')
+    if (!uid) return sendJson(res, { code: 0, msg: '缺少 uid 参数', data: null })
+    try {
+      const bundle = await buildPlayer(uid)
+      if (bundle.error) return sendJson(res, { code: 0, msg: bundle.error, data: null })
+      return sendJson(res, { code: 1, msg: 'OK', data: bundle })
+    } catch (error) {
+      return sendJson(res, { code: 0, msg: `查询失败：${error.message}`, data: null })
+    }
+  }
+
+  // 透传（搜索 / 逐场战绩等）
   let auth
   try {
     auth = await login()
   } catch (e) {
-    res.setHeader('Content-Type', 'application/json; charset=utf-8')
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    res.status(200).json({ code: 0, msg: e.message, data: null })
-    return
-  }
-
-  const upstream = DEFAULT_UPSTREAM
-  let target = `${upstream}${kqPath}${url.search}`
-  const headers = {
-    'Accept': 'application/json',
-    'token': auth.token,
-    'user_id': auth.userId,
-    'XX-Device-Type': 'wxapp',
-    'User-Agent': WX_UA,
-    'Referer': WX_REFERER
+    return sendJson(res, { code: 0, msg: e.message, data: null })
   }
 
   let body = null
-  if (req.method === 'POST') {
+  if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
     body = await new Promise((resolve) => {
       let raw = ''
       req.on('data', (chunk) => { raw += chunk })
       req.on('end', () => resolve(raw || null))
     })
-    headers['Content-Type'] = 'application/x-www-form-urlencoded'
   }
 
-  // 加签名
-  if (needSign) {
-    const ts = String(Date.now())
-    const sign = md5(SIGN_SECRET + ts)
-    if (req.method === 'POST' && body) {
-      body = `${body}&timestamp=${ts}&token=${sign}`
-    } else {
-      target += (url.search ? '&' : '?') + `timestamp=${ts}&token=${sign}`
-    }
-  }
-
-  const resp = await fetch(target, { method: req.method, headers, body })
-  const data = await resp.json().catch(() => ({ code: 0, msg: '上游返回非 JSON', data: null }))
-
-  // 102 重登重试
-  if (data?.code !== 1 && String(data?.msg || '').includes('102')) {
-    cachedAuth = null
-    try {
-      auth = await login()
-      headers.token = auth.token
-      headers.user_id = auth.userId
-      const retry = await fetch(target, { method: req.method, headers, body })
-      const retryData = await retry.json().catch(() => ({}))
-      res.setHeader('Content-Type', 'application/json; charset=utf-8')
-      res.setHeader('Access-Control-Allow-Origin', '*')
-      res.status(200).json(retryData)
-      return
-    } catch {}
-  }
-
-  res.setHeader('Content-Type', 'application/json; charset=utf-8')
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.status(200).json(data)
+  const data = await requestUpstream(kqPath + url.search, { method: req.method, body, auth })
+  sendJson(res, data)
 }

@@ -317,93 +317,14 @@ async function query() {
   }
   loading.value = true
   error.value = ''
-  loadingText.value = '正在登录并读取资料…'
+  loadingText.value = '正在登录并读取积分流水…'
   const timer = setTimeout(() => {
     loadingText.value = '正在拉取逐场战绩，首次较慢，请稍候…'
   }, 1500)
   try {
-    // 1. 并发：资料 + 积分流水
-    const [profileRes, scoresRes] = await Promise.all([
-      fetchUpstream('/User/adv_profile', { uid }),
-      fetchUpstream('/User/getUserScores', { uid })
-    ])
-    const profileData = profileRes?.data || {}
-
-    loadingText.value = '正在拉取逐场战绩…'
-
-    // 2. getgames 翻页拿比赛（最多 20 页 = 200 场）
-    const allGames = []
-    for (let p = 1; p <= 20; p++) {
-      const res = await fetchUpstream('/user/getgames', { uid, page: p })
-      const list = res?.data?.data
-      if (!Array.isArray(list) || !list.length) break
-      allGames.push(...list)
-      if (list.length < 10) break
-    }
-
-    // 3. 拼 matches
-    const matches = allGames
-      .filter(g => String(g.flag) !== '1')
-      .map(g => {
-        const isFirst = String(g.uid1) === String(uid)
-        const oppUid = isFirst ? String(g.uid2) : String(g.uid1)
-        if (!oppUid || oppUid === '0') return null
-        const myScore = Number(String(isFirst ? g.result1 : g.result2).replace(/[^\d]/g, ''))
-        const oppScore = Number(String(isFirst ? g.result2 : g.result1).replace(/[^\d]/g, ''))
-        if (!Number.isFinite(myScore) || !Number.isFinite(oppScore)) return null
-        return {
-          date: String(g.dateline || ''),
-          title: '',
-          round: '',
-          oppUid,
-          oppName: isFirst ? (g.username2 || '') : (g.username1 || ''),
-          myScore,
-          oppScore,
-          win: myScore > oppScore,
-          oppRating: Number(g.ascore1) || null
-        }
-      })
-      .filter(Boolean)
-
-    // 4. 积分曲线
-    const events = Array.isArray(scoresRes?.data) ? scoresRes.data : []
-    const curve = events
-      .map(e => ({ date: String(e.dateline || ''), score: Number(e.postscore), title: e.title || '' }))
-      .filter(e => Number.isFinite(e.score))
-      .sort((a, b) => a.date < b.date ? -1 : 1)
-
-    const wins = matches.filter(m => m.win).length
-    const total = Number(profileData.total) || matches.length
-
-    bundle.value = {
-      uid,
-      profile: {
-        name: profileData.realname || profileData.username || '',
-        nickname: profileData.username || '',
-        score: Number(profileData.score) || null,
-        maxScore: Number(profileData.maxscore) || null,
-        yearMaxScore: Number(profileData.maxScoreTheYear) || null,
-        win: Number(profileData.win) || 0,
-        lose: Number(profileData.lose) || 0,
-        total,
-        rate: total ? ((Number(profileData.win) / total) * 100).toFixed(1) + '%' : '',
-        province: profileData.resideprovince || '',
-        city: profileData.residecity || '',
-        qiupai: profileData.qiupai || '',
-        brand: profileData.brand || ''
-      },
-      curve,
-      matches,
-      stats: {
-        matches: matches.length,
-        wins,
-        losses: matches.length - wins,
-        winRate: matches.length ? Number((wins / matches.length * 100).toFixed(1)) : 0,
-        opponents: new Set(matches.map(m => m.oppUid)).size,
-        events: events.length,
-        careerTotal: total
-      }
-    }
+    // 后端一次性聚合：资料 + 积分曲线 + 逐场对局 + 统计
+    const res = await fetchUpstream('/player', { uid })
+    bundle.value = res.data
     page.value = 1
   } catch (err) {
     error.value = err.message
