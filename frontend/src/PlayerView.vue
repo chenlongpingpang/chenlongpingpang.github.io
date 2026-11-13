@@ -58,7 +58,9 @@
 
         <div class="score-overview">
           <div><span>当前积分</span><strong>{{ show(profile.score) }}</strong></div>
-          <div><span>年度积分</span><strong>{{ show(profile.yearMaxScore) }}</strong></div>
+          <button type="button" class="annual-score" @click="openAnnual">
+            <span>年度积分 <i>?</i></span><strong>{{ show(profile.yearMaxScore) }}</strong>
+          </button>
           <div><span>历史最高</span><strong>{{ show(profile.maxScore) }}</strong></div>
         </div>
 
@@ -155,6 +157,108 @@
           <button :disabled="page === totalPages" @click="changePage(page + 1)">下一页</button>
         </div>
       </section>
+
+      <div v-if="annualScoreOpen" class="dialog-backdrop" @click.self="annualScoreOpen = false">
+        <section class="annual-dialog" role="dialog" aria-modal="true" aria-label="年度积分计算说明">
+          <button class="dialog-close" aria-label="关闭" @click="annualScoreOpen = false">×</button>
+
+          <template v-if="annualDetail === 'overview'">
+            <h2>年度积分怎么算？</h2>
+            <p class="annual-formula">年度最高 + 大额输分调整 − 参赛扣减 + 官方修正</p>
+            <div v-if="annualAnalysis" class="formula-grid">
+              <button class="metric-help" type="button" @click="annualDetail = 'peak'">近一年单打最高 <i>?</i></button>
+              <b>{{ annualAnalysis.peak ?? '-' }}</b>
+              <button class="metric-help" type="button" @click="annualDetail = 'loss'">大额输分调整 <i>?</i></button>
+              <b>{{ annualAnalysis.adjustment ?? '人工审核' }}</b>
+              <button class="metric-help" type="button" @click="annualDetail = 'deduction'">参赛扣减 <i>?</i></button>
+              <b>−{{ annualAnalysis.deduction }}</b>
+              <button class="metric-help" type="button" @click="annualDetail = 'correction'">官方修正 <i>?</i></button>
+              <b>{{ annualAnalysis.correction ?? '-' }}</b>
+              <span>官网年度积分</span><strong>{{ profile.yearMaxScore || '-' }}</strong>
+            </div>
+          </template>
+
+          <template v-else-if="annualDetail === 'peak'">
+            <button class="dialog-back" type="button" @click="annualDetail = 'overview'">‹ 返回年度积分</button>
+            <h2>近一年单打最高</h2>
+            <p v-if="annualAnalysis?.peakRecord" class="detail-intro">
+              <span>比赛日期：{{ annualAnalysis.peakRecord.date }}</span>
+              <span>比赛名称：{{ eventTitleMap.get(annualAnalysis.peakRecord.eventId) || '—' }}</span>
+            </p>
+            <div v-if="annualAnalysis?.peakEventRecords.length" class="table-wrap annual-record-table peak-event-table">
+              <table>
+                <thead><tr><th>序号</th><th>我方</th><th>对手</th><th>比分</th><th>变化</th><th>实时积分</th></tr></thead>
+                <tbody>
+                  <tr
+                    v-for="record in annualAnalysis.peakEventRecords"
+                    :key="record.gameId"
+                    :class="{ 'peak-score-row': record.gameId === annualAnalysis.peakRecord.gameId }"
+                  >
+                    <td>{{ record.overallIndex }}</td>
+                    <td>{{ teamName(record.selfName || selfName, record.teammateName) }}</td>
+                    <td><strong>{{ teamName(record.opponentName, record.opponentTeammateName) }}</strong></td>
+                    <td><strong class="score">{{ record.scoreLine }}</strong></td>
+                    <td>{{ record.scoreChange }}</td>
+                    <td>{{ record.after }}<small v-if="record.gameId === annualAnalysis.peakRecord.gameId">最高</small></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p v-else class="annual-note">当前数据不足，无法定位产生最高积分的比赛。</p>
+          </template>
+
+          <template v-else-if="annualDetail === 'loss'">
+            <button class="dialog-back" type="button" @click="annualDetail = 'overview'">‹ 返回年度积分</button>
+            <h2>大额输分调整</h2>
+            <p class="detail-intro">近一年单打掉分 ≥35 的场次</p>
+            <div v-if="annualAnalysis?.largeLosses.length" class="table-wrap annual-record-table">
+              <table>
+                <thead><tr><th>序号</th><th>我方</th><th>敌方</th><th>比分</th><th>变化</th><th>日期</th></tr></thead>
+                <tbody>
+                  <tr v-for="record in annualAnalysis.largeLosses" :key="record.gameId">
+                    <td>{{ record.overallIndex }}</td>
+                    <td>{{ teamName(record.selfName || selfName, record.teammateName) }}</td>
+                    <td><strong>{{ teamName(record.opponentName, record.opponentTeammateName) }}</strong></td>
+                    <td><strong class="score">{{ record.scoreLine }}</strong></td>
+                    <td>{{ record.scoreChange }}</td>
+                    <td>{{ record.date }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p v-else class="annual-note">当前没有大额输分比赛。</p>
+          </template>
+
+          <template v-else-if="annualDetail === 'deduction'">
+            <button class="dialog-back" type="button" @click="annualDetail = 'overview'">‹ 返回年度积分</button>
+            <h2>参赛扣减</h2>
+            <div class="deduction-axis" aria-label="参赛盘数扣减数轴">
+              <div class="deduction-values">
+                <span :class="{ active: annualAnalysis?.deduction === 0 }">0</span>
+                <span :class="{ active: annualAnalysis?.deduction === 50 }">-50</span>
+                <span :class="{ active: annualAnalysis?.deduction === 60 }">-60</span>
+                <span :class="{ active: annualAnalysis?.deduction === 70 }">-70</span>
+                <span :class="{ active: annualAnalysis?.deduction === 80 }">-80</span>
+                <span :class="{ active: annualAnalysis?.deduction === 90 }">-90</span>
+                <span :class="{ active: annualAnalysis?.deduction === 100 }">-100</span>
+              </div>
+              <div class="deduction-track"><i v-for="tick in 8" :key="tick"></i></div>
+              <div class="deduction-labels">
+                <span>0</span><span>10</span><span>30</span><span>120</span>
+                <span>240</span><span>360</span><span>480</span><span>+</span>
+              </div>
+              <small>参赛盘数</small>
+            </div>
+            <p class="detail-intro">当前统计 {{ annualAnalysis?.count || 0 }} 场单打（已结算积分），参赛扣减为 {{ annualAnalysis?.deduction ? `-${annualAnalysis.deduction}` : 0 }} 分。</p>
+          </template>
+
+          <template v-else>
+            <button class="dialog-back" type="button" @click="annualDetail = 'overview'">‹ 返回年度积分</button>
+            <h2>官方修正</h2>
+            <p class="detail-intro">根据获得荣誉、惩罚等情况调整，具体规则未知。本界面采用反推的形式，根据官网年度积分与其他已知项目的差额计算官方修正。</p>
+          </template>
+        </section>
+      </div>
     </template>
   </div>
 </template>
@@ -171,6 +275,8 @@ const bundle = ref(null)
 const candidates = ref([])
 const page = ref(1)
 const statScope = ref('all')
+const annualScoreOpen = ref(false)
+const annualDetail = ref('overview')
 const pageSize = 20
 
 const profile = computed(() => bundle.value?.profile || {})
@@ -291,6 +397,83 @@ const trendChart = computed(() => {
     recordCount: records.length
   }
 })
+
+const eventTitleMap = computed(() => {
+  const map = new Map()
+  for (const record of matches.value) {
+    if (record.eventId && record.title) map.set(record.eventId, record.title)
+  }
+  return map
+})
+
+const annualAnalysis = computed(() => {
+  if (!bundle.value) return null
+  const rows = matches.value
+    .filter(record => !record.doubles && String(record.date || '') >= oneYearCutoff.value && isSettledScoreChange(record.scoreChange))
+    .sort((left, right) => String(right.date).localeCompare(String(left.date)))
+
+  let running = numberValue(profile.value.score)
+  const reconstructed = rows.map(record => {
+    const delta = numberValue(record.scoreChange)
+    const after = running
+    const before = running !== null && delta !== null ? running - delta : running
+    if (before !== null) running = before
+    return { ...record, delta, before, after }
+  })
+
+  const peakValues = reconstructed.flatMap(row => [row.before, row.after]).filter(Number.isFinite)
+  if (numberValue(profile.value.score) !== null) peakValues.push(numberValue(profile.value.score))
+  let peak = peakValues.length ? Math.max(...peakValues) : null
+  const maximum = numberValue(profile.value.maxScore)
+  if (peak !== null && maximum !== null) peak = Math.min(peak, maximum)
+
+  const largeLosses = reconstructed.filter(row => row.delta !== null && row.delta <= -35)
+  const ratio = largeLosses.length ? reconstructed.length / largeLosses.length : Infinity
+  const coefficient = largeLosses.length === 0 || ratio >= 40 ? 0
+    : ratio > 30 ? 0.2 : ratio > 20 ? 0.4 : ratio > 10 ? 0.6 : null
+  const lossTotal = largeLosses.reduce((sum, row) => sum + row.delta, 0)
+  const adjustment = coefficient === null ? null : -(coefficient * lossTotal)
+
+  const count = reconstructed.length
+  const deduction = count >= 480 ? 100 : count >= 360 ? 90 : count >= 240 ? 80
+    : count >= 120 ? 70 : count >= 30 ? 60 : count >= 10 ? 50 : 0
+
+  const official = numberValue(profile.value.yearMaxScore)
+  const correction = official !== null && peak !== null && adjustment !== null
+    ? official - peak - adjustment + deduction
+    : null
+
+  const peakRecord = reconstructed.find(record => record.after === peak && record.delta >= 0)
+    || reconstructed.find(record => record.before === peak)
+    || null
+  const recordPositions = new Map(matches.value.map((record, index) => [record.gameId, index + 1]))
+  const peakEventRecords = peakRecord
+    ? reconstructed
+      .filter(record => peakRecord.eventId ? record.eventId === peakRecord.eventId : record.date === peakRecord.date)
+      .sort((a, b) => Number(a.gameId) - Number(b.gameId))
+      .map(record => ({ ...record, overallIndex: recordPositions.get(record.gameId) || '-' }))
+    : []
+
+  return {
+    peak,
+    peakRecord,
+    peakEventRecords,
+    adjustment,
+    deduction,
+    correction,
+    count,
+    largeLossCount: largeLosses.length,
+    largeLosses: largeLosses.map(record => ({
+      ...record,
+      overallIndex: recordPositions.get(record.gameId) || '-'
+    }))
+  }
+})
+
+function openAnnual() {
+  annualDetail.value = 'overview'
+  annualScoreOpen.value = true
+}
 
 function show(value) {
   return Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : '-'
