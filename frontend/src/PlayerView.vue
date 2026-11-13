@@ -69,7 +69,26 @@
           <div class="scope-tabs" aria-label="统计时间范围">
             <button :class="{ active: statScope === 'all' }" @click="setScope('all')">全部</button>
             <button :class="{ active: statScope === 'year' }" @click="setScope('year')">近一年</button>
-            <button :class="{ active: statScope === 'recent40' }" @click="setScope('recent40')">近40场</button>
+          </div>
+        </div>
+        <div class="range-panel">
+          <div class="range-row">
+            <span class="range-date">{{ rangeStartDate || '—' }}</span>
+            <div class="range-slider">
+              <div class="range-track"></div>
+              <div class="range-fill" :style="fillStyle"></div>
+              <input
+                type="range" class="range-thumb"
+                :min="0" :max="Math.max(0, dateList.length - 1)" :value="rangeStartIdx"
+                @input="onStartInput" aria-label="开始日期"
+              />
+              <input
+                type="range" class="range-thumb"
+                :min="0" :max="Math.max(0, dateList.length - 1)" :value="rangeEndIdx"
+                @input="onEndInput" aria-label="结束日期"
+              />
+            </div>
+            <span class="range-date">{{ rangeEndDate || '—' }}</span>
           </div>
         </div>
         <div class="stats-head"><span>类型</span><span>总数</span><span>胜场</span><span>败场</span></div>
@@ -284,6 +303,8 @@ const bundle = ref(null)
 const candidates = ref([])
 const page = ref(1)
 const statScope = ref('all')
+const rangeStartIdx = ref(0)
+const rangeEndIdx = ref(0)
 const annualScoreOpen = ref(false)
 const annualDetail = ref('overview')
 const pageSize = 20
@@ -303,26 +324,68 @@ const oneYearCutoff = computed(() => {
   ].join('-')
 })
 
-const scopeLabel = computed(() => statScope.value === 'year' ? '近一年' : statScope.value === 'recent40' ? '近40场' : '全部')
-
-const scopedRecords = computed(() => {
-  if (statScope.value === 'year') {
-    return matches.value.filter(record => String(record.date || '') >= oneYearCutoff.value)
-  }
-  if (statScope.value === 'recent40') {
-    return [...matches.value]
-      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
-      .slice(0, 40)
-  }
-  return matches.value
+const dateList = computed(() => {
+  const set = new Set(matches.value.map(record => record.date).filter(Boolean))
+  return [...set].sort()
 })
+const rangeStartDate = computed(() => dateList.value[rangeStartIdx.value] || '')
+const rangeEndDate = computed(() => dateList.value[rangeEndIdx.value] || '')
+
+const fillStyle = computed(() => {
+  const n = Math.max(1, dateList.value.length - 1)
+  const left = (rangeStartIdx.value / n) * 100
+  const width = ((rangeEndIdx.value - rangeStartIdx.value) / n) * 100
+  return { left: `${left}%`, width: `${width}%` }
+})
+
+const scopeLabel = computed(() => {
+  if (statScope.value === 'year') return '近一年'
+  if (statScope.value === 'custom') return `${rangeStartDate.value} ~ ${rangeEndDate.value}`
+  return '全部'
+})
+
+const scopedRecords = computed(() => matches.value.filter(record => {
+  const d = String(record.date || '')
+  if (rangeStartDate.value && d < rangeStartDate.value) return false
+  if (rangeEndDate.value && d > rangeEndDate.value) return false
+  return true
+}))
+
+function resetRange() {
+  rangeStartIdx.value = 0
+  rangeEndIdx.value = Math.max(0, dateList.value.length - 1)
+}
 
 function setScope(scope) {
   statScope.value = scope
   page.value = 1
+  if (scope === 'all') {
+    resetRange()
+  } else if (scope === 'year') {
+    const idx = dateList.value.findIndex(d => d >= oneYearCutoff.value)
+    rangeStartIdx.value = idx === -1 ? 0 : idx
+    rangeEndIdx.value = Math.max(0, dateList.value.length - 1)
+  }
 }
 
-watch(statScope, () => { page.value = 1 })
+function onStartInput(event) {
+  const value = Number(event.target.value)
+  rangeStartIdx.value = Math.min(value, rangeEndIdx.value)
+  statScope.value = 'custom'
+  page.value = 1
+}
+
+function onEndInput(event) {
+  const value = Number(event.target.value)
+  rangeEndIdx.value = Math.max(value, rangeStartIdx.value)
+  statScope.value = 'custom'
+  page.value = 1
+}
+
+watch(bundle, () => {
+  page.value = 1
+  resetRange()
+})
 
 const totalPages = computed(() => Math.max(1, Math.ceil(scopedRecords.value.length / pageSize)))
 const visibleRecords = computed(() => {

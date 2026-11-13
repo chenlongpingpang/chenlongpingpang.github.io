@@ -132,6 +132,19 @@ h1 { margin: 20px 0 26px; font-size: 32px; text-align: center; }
 .scope-tabs { display: flex; border: 1px solid #fff; }
 .scope-tabs button { min-height: 34px; padding: 0 12px; border: 0; color: #fff; background: transparent; font-size: 12px; }
 .scope-tabs button.active { color: var(--blue); background: #fff; }
+
+.range-panel { padding: 12px 14px 2px; }
+.range-row { display: flex; align-items: center; gap: 10px; }
+.range-date { flex: none; width: 88px; font-size: 11px; color: #fff; }
+.range-date:last-child { text-align: right; }
+.range-slider { position: relative; flex: 1; height: 24px; }
+.range-track { position: absolute; left: 0; right: 0; top: 10px; height: 4px; border-radius: 2px; background: rgba(255,255,255,.4); }
+.range-fill { position: absolute; top: 10px; height: 4px; border-radius: 2px; background: #fff; }
+.range-thumb { position: absolute; left: 0; top: 0; width: 100%; height: 24px; margin: 0; background: transparent; -webkit-appearance: none; appearance: none; pointer-events: none; }
+.range-thumb::-webkit-slider-runnable-track { background: transparent; }
+.range-thumb::-moz-range-track { background: transparent; }
+.range-thumb::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 2px solid var(--blue); cursor: pointer; pointer-events: auto; }
+.range-thumb::-moz-range-thumb { width: 16px; height: 16px; border-radius: 50%; background: #fff; border: 2px solid var(--blue); cursor: pointer; pointer-events: auto; }
 .stats-head, .stats-row { margin: 0 12px; display: grid; grid-template-columns: 1.2fr repeat(3, 1fr); align-items: center; text-align: center; }
 .stats-head { min-height: 34px; border-bottom: 1px solid rgba(255,255,255,.55); font-size: 12px; }
 .stats-row { min-height: 52px; border-bottom: 1px solid rgba(255,255,255,.35); }
