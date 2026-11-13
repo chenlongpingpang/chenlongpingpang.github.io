@@ -125,9 +125,12 @@ function formatDate(raw) {
 /* ---------------- 聚合：选手整包 ---------------- */
 
 async function getProfile(uid) {
-  const res = await apiGet(`/User/adv_profile?uid=${uid}`)
-  if (res?.code !== 1 || !res.data) return null
-  return res.data
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = await apiGet(`/User/adv_profile?uid=${uid}`)
+    if (res?.code === 1 && res.data) return res.data
+    await sleep(300 * (attempt + 1))
+  }
+  return null
 }
 
 /** 拉取单页逐场战绩；code!==1 视为失败（可重试），空数组表示已到底 */
