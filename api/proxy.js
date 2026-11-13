@@ -20,7 +20,7 @@ import crypto from 'crypto'
 
 const DEFAULT_UPSTREAM = 'https://kaiqiuwang.cc/xcx/public/index.php/api'
 const TOKEN_TTL = 30 * 60 * 1000
-const CONCURRENCY = 12
+const CONCURRENCY = 20
 const SIGN_SECRET = 'e8b7a4e1-06d3-4e0b-95cf-9f0450072389'
 const SIGNED_PATHS = ['/user/lists', '/user/getgames', '/user/adv_profile']
 const WX_UA = 'Mozilla/5.0 (iPad; CPU OS 26_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.76(0x18004c3a) NetType/WIFI Language/zh_CN'
