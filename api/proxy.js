@@ -20,7 +20,7 @@ import crypto from 'crypto'
 
 const DEFAULT_UPSTREAM = 'https://kaiqiuwang.cc/xcx/public/index.php/api'
 const TOKEN_TTL = 30 * 60 * 1000
-const CONCURRENCY = 18
+const CONCURRENCY = 12
 const MAX_GAME_PAGE = 150
 const SIGN_SECRET = 'e8b7a4e1-06d3-4e0b-95cf-9f0450072389'
 const SIGNED_PATHS = ['/user/lists', '/user/getgames', '/user/adv_profile']
@@ -148,7 +148,7 @@ async function fetchAllGames(uid, titleMap) {
       const page = cursor++
       if (page > MAX_GAME_PAGE) return
       let rows = null
-      for (let attempt = 0; attempt < 2; attempt++) {
+      for (let attempt = 0; attempt < 3; attempt++) {
         rows = await fetchGamesPage(uid, page)
         if (rows !== null) break
         await sleep(300 * (attempt + 1))
@@ -163,10 +163,10 @@ async function fetchAllGames(uid, titleMap) {
   if (failed.length) {
     const retryOut = await pool(failed, async (page) => {
       let rows = null
-      for (let attempt = 0; attempt < 2; attempt++) {
+      for (let attempt = 0; attempt < 3; attempt++) {
         rows = await fetchGamesPage(uid, page)
         if (rows !== null) break
-        await sleep(300)
+        await sleep(300 * (attempt + 1))
       }
       return rows || []
     }, 6)
