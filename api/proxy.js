@@ -2,13 +2,13 @@
  * 乒乓助手 · 开球网聚合代理（Vercel Serverless Function）
  *
  * 路由：
- *   GET  /api/player?uid=xxx   聚合返回选手资料 / 积分曲线 / 逐场对局 / 统计
+ *   GET  /api/player?uid=xxx   聚合返回选手资料 / 积分曲线 / 全部对局 / 统计
  *   GET  /api/<开球网路径>      透传（自动登录、签名、带微信 header）
  *
- * 聚合策略（复用本地已验证方案）：
- *   - getUserScores 拿积分流水（赛事 + itemid）
- *   - Match/getResult 逐赛事并发拉对局，重建战绩
- *   - adv_profile 已被上游 102 拦截，仅作容错补充，失败不影响主流程
+ * 聚合策略：
+ *   - adv_profile  拿选手资料（已纳入签名）
+ *   - getUserScores 拿积分流水（积分曲线 + 赛事标题）
+ *   - user/getgames 全量翻页拿全部逐场对局（含失败页重试）
  *
  * 环境变量（Vercel Project Settings → Environment Variables）：
  *   KQ_ACCOUNT  开球网登录账号
@@ -20,7 +20,8 @@ import crypto from 'crypto'
 
 const DEFAULT_UPSTREAM = 'https://kaiqiuwang.cc/xcx/public/index.php/api'
 const TOKEN_TTL = 30 * 60 * 1000
-const CONCURRENCY = 20
+const CONCURRENCY = 18
+const MAX_GAME_PAGE = 150
 const SIGN_SECRET = 'e8b7a4e1-06d3-4e0b-95cf-9f0450072389'
 const SIGNED_PATHS = ['/user/lists', '/user/getgames', '/user/adv_profile']
 const WX_UA = 'Mozilla/5.0 (iPad; CPU OS 26_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.76(0x18004c3a) NetType/WIFI Language/zh_CN'
@@ -31,6 +32,8 @@ let cachedAuth = null
 function md5(s) {
   return crypto.createHash('md5').update(s, 'utf8').digest('hex')
 }
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 async function login() {
   if (cachedAuth && Date.now() < cachedAuth.expiresAt) return cachedAuth
@@ -127,6 +130,88 @@ async function getProfile(uid) {
   return res.data
 }
 
+/** 拉取单页逐场战绩；code!==1 视为失败（可重试），空数组表示已到底 */
+async function fetchGamesPage(uid, page) {
+  const res = await apiGet(`/user/getgames?uid=${uid}&page=${page}`)
+  if (res?.code !== 1) return null
+  return Array.isArray(res?.data?.data) ? res.data.data : []
+}
+
+/** 全量翻页，失败页两轮重试；解析为标准对局数组 */
+async function fetchAllGames(uid, titleMap) {
+  const failed = []
+  const all = []
+  let cursor = 1
+
+  const runners = Array.from({ length: CONCURRENCY }, async () => {
+    while (true) {
+      const page = cursor++
+      if (page > MAX_GAME_PAGE) return
+      let rows = null
+      for (let attempt = 0; attempt < 2; attempt++) {
+        rows = await fetchGamesPage(uid, page)
+        if (rows !== null) break
+        await sleep(300 * (attempt + 1))
+      }
+      if (rows === null) { failed.push(page); continue }
+      if (rows.length) all.push(...rows)
+    }
+  })
+  await Promise.all(runners)
+
+  // 失败页二次小并发重试
+  if (failed.length) {
+    const retryOut = await pool(failed, async (page) => {
+      let rows = null
+      for (let attempt = 0; attempt < 2; attempt++) {
+        rows = await fetchGamesPage(uid, page)
+        if (rows !== null) break
+        await sleep(300)
+      }
+      return rows || []
+    }, 6)
+    retryOut.forEach((rows) => rows && all.push(...rows))
+  }
+
+  const matches = []
+  const seenGame = new Set()
+  let selfName = ''
+  for (const g of all) {
+    if (!g || String(g.flag) === '1') continue
+    const isFirst = String(g.uid1) === String(uid)
+    const isSecond = String(g.uid2) === String(uid)
+    if (!isFirst && !isSecond) continue
+    const oppUid = isFirst ? String(g.uid2) : String(g.uid1)
+    if (!oppUid || oppUid === '0') continue
+    const myName = isFirst ? g.username1 : g.username2
+    if (!selfName && myName) selfName = myName
+    const myScore = Number(String(isFirst ? g.result1 : g.result2).replace(/[^\d]/g, '') || '')
+    const oppScoreText = String(isFirst ? g.result2 : g.result1).replace(/[^\d]/g, '')
+    if (!Number.isFinite(myScore) || !oppScoreText) continue
+    const oppScore = Number(oppScoreText)
+    if (!Number.isFinite(oppScore)) continue
+    const dedupeKey = [g.gameid, g.uid1, g.uid2, myScore, oppScore].join('|')
+    if (seenGame.has(dedupeKey)) continue
+    seenGame.add(dedupeKey)
+    const rawDate = String(g.dateline || '')
+    matches.push({
+      date: formatDate(rawDate),
+      rawDate,
+      title: titleMap.get(String(g.eventid || '')) || '',
+      round: '',
+      oppUid,
+      oppName: isFirst ? g.username2 || '' : g.username1 || '',
+      myScore,
+      oppScore,
+      win: myScore > oppScore,
+      oppRating: null
+    })
+  }
+
+  matches.sort((a, b) => (a.rawDate < b.rawDate ? 1 : a.rawDate > b.rawDate ? -1 : 0))
+  return { matches, selfName }
+}
+
 async function buildPlayer(uid) {
   const startedAt = Date.now()
 
@@ -142,6 +227,7 @@ async function buildPlayer(uid) {
 
   const seenEvent = new Set()
   const uniqueEvents = []
+  const titleMap = new Map()
   for (const event of events) {
     const key = `${event.eventid}:${event.itemid}`
     if (seenEvent.has(key)) continue
@@ -152,94 +238,34 @@ async function buildPlayer(uid) {
       date: formatDate(event.dateline),
       rawDate: String(event.dateline || ''),
       score: Number(event.postscore),
-      title: event.title || '',
-      city: [event.province, event.city].filter(Boolean).join('·'),
-      location: event.location || ''
+      title: event.title || ''
     })
+    if (event.eventid) titleMap.set(String(event.eventid), event.title || '')
   }
 
-  const results = await pool(uniqueEvents, async (event) => {
-    if (!event.eventid || !event.itemid) return null
-    const res = await apiGet(`/Match/getResult?eventid=${event.eventid}&itemid=${event.itemid}`)
-    if (res?.code !== 1) return null
-    return res.data?.ttgames?.[event.itemid] || null
-  })
-
-  const matches = []
-  const seenGame = new Set()
-  let selfName = ''
-  results.forEach((rounds, index) => {
-    const event = uniqueEvents[index]
-    if (!Array.isArray(rounds)) return
-    for (const round of rounds) {
-      const roundName = round?.roundname || ''
-      for (const game of round?.games || []) {
-        if (!game) continue
-        if (String(game.flag) === '1') continue
-        const isFirst = String(game.uid1) === String(uid)
-        const isSecond = String(game.uid2) === String(uid)
-        if (!isFirst && !isSecond) continue
-        const opponentUid = isFirst ? String(game.uid2) : String(game.uid1)
-        if (!opponentUid || opponentUid === '0') continue
-        const myName = isFirst ? game.username1 : game.username2
-        if (!selfName && myName) selfName = myName
-        const myScore = Number(String(isFirst ? game.result1 : game.result2).replace(/[^\d]/g, '') || '')
-        const oppScoreText = String(isFirst ? game.result2 : game.result1).replace(/[^\d]/g, '')
-        if (!Number.isFinite(myScore) || !oppScoreText) continue
-        const oppScore = Number(oppScoreText)
-        if (!Number.isFinite(oppScore)) continue
-        const dedupeKey = [event.eventid, event.itemid, roundName, game.uid1, game.uid2, myScore, oppScore].join('|')
-        if (seenGame.has(dedupeKey)) continue
-        seenGame.add(dedupeKey)
-        matches.push({
-          date: event.date,
-          rawDate: event.rawDate,
-          title: event.title,
-          round: roundName,
-          oppUid: opponentUid,
-          oppName: isFirst ? game.username2 || '' : game.username1 || '',
-          myScore,
-          oppScore,
-          win: myScore > oppScore,
-          oppRating: null
-        })
-      }
-    }
-  })
-
-  matches.sort((a, b) => (a.rawDate < b.rawDate ? 1 : a.rawDate > b.rawDate ? -1 : 0))
+  const { matches, selfName: gamesSelfName } = await fetchAllGames(uid, titleMap)
 
   const wins = matches.filter((m) => m.win).length
   const losses = matches.length - wins
   const opponentUids = [...new Set(matches.map((m) => m.oppUid))]
-
-  const scoreOf = (p) => {
-    const v = Number(p?.score)
-    return Number.isFinite(v) && v > 0 ? v : null
-  }
-
-  // 并发补对手实时积分（adv_profile 已纳入签名）
-  const opponentProfiles = await pool(opponentUids, (oppUid) => getProfile(oppUid).catch(() => null))
-  const scoreMap = new Map()
-  opponentUids.forEach((oppUid, index) => {
-    scoreMap.set(oppUid, scoreOf(opponentProfiles[index]))
-  })
-  for (const match of matches) {
-    match.oppRating = scoreMap.get(match.oppUid) ?? null
-  }
 
   const curve = uniqueEvents
     .filter((event) => Number.isFinite(event.score))
     .sort((a, b) => (a.rawDate < b.rawDate ? -1 : a.rawDate > b.rawDate ? 1 : 0))
     .map((event) => ({ date: event.date, score: event.score, title: event.title }))
 
+  const scoreOf = (p) => {
+    const v = Number(p?.score)
+    return Number.isFinite(v) && v > 0 ? v : null
+  }
   const latestScore = curve.length ? curve[curve.length - 1].score : null
+  const selfName = profile?.realname || profile?.username || gamesSelfName || ''
 
   return {
     uid: String(uid),
     profile: {
-      name: profile?.realname || profile?.username || selfName || '',
-      nickname: profile?.username || selfName || '',
+      name: profile?.realname || profile?.username || gamesSelfName || '',
+      nickname: profile?.username || gamesSelfName || '',
       score: scoreOf(profile) ?? latestScore,
       maxScore: Number(profile?.maxscore) || null,
       yearMaxScore: Number(profile?.maxScoreTheYear) || null,
