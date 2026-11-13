@@ -22,7 +22,7 @@ const DEFAULT_UPSTREAM = 'https://kaiqiuwang.cc/xcx/public/index.php/api'
 const TOKEN_TTL = 30 * 60 * 1000
 const CONCURRENCY = 12
 const SIGN_SECRET = 'e8b7a4e1-06d3-4e0b-95cf-9f0450072389'
-const SIGNED_PATHS = ['/user/lists', '/user/getgames']
+const SIGNED_PATHS = ['/user/lists', '/user/getgames', '/user/adv_profile']
 const WX_UA = 'Mozilla/5.0 (iPad; CPU OS 26_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.76(0x18004c3a) NetType/WIFI Language/zh_CN'
 const WX_REFERER = 'https://servicewechat.com/wxff09fb0e92aa456a/552/page-frame.html'
 
@@ -213,15 +213,26 @@ async function buildPlayer(uid) {
   const losses = matches.length - wins
   const opponentUids = [...new Set(matches.map((m) => m.oppUid))]
 
+  const scoreOf = (p) => {
+    const v = Number(p?.score)
+    return Number.isFinite(v) && v > 0 ? v : null
+  }
+
+  // 并发补对手实时积分（adv_profile 已纳入签名）
+  const opponentProfiles = await pool(opponentUids, (oppUid) => getProfile(oppUid).catch(() => null))
+  const scoreMap = new Map()
+  opponentUids.forEach((oppUid, index) => {
+    scoreMap.set(oppUid, scoreOf(opponentProfiles[index]))
+  })
+  for (const match of matches) {
+    match.oppRating = scoreMap.get(match.oppUid) ?? null
+  }
+
   const curve = uniqueEvents
     .filter((event) => Number.isFinite(event.score))
     .sort((a, b) => (a.rawDate < b.rawDate ? -1 : a.rawDate > b.rawDate ? 1 : 0))
     .map((event) => ({ date: event.date, score: event.score, title: event.title }))
 
-  const scoreOf = (p) => {
-    const v = Number(p?.score)
-    return Number.isFinite(v) && v > 0 ? v : null
-  }
   const latestScore = curve.length ? curve[curve.length - 1].score : null
 
   return {
