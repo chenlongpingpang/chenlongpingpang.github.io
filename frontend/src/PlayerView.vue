@@ -1,4 +1,4 @@
-<!-- 选手详情：输入 uid → 资料 / 积分曲线 / 交手记录 -->
+<!-- 选手详情：输入 uid/姓名 → 资料 / 比赛统计（全部·单打·双打）/ 积分趋势 / 交手记录 -->
 <template>
   <div class="pv">
     <section class="pv-hero">
@@ -46,77 +46,108 @@
     </section>
 
     <template v-if="bundle">
-      <section class="pv-profile">
-        <div class="pv-avatar">
-          <span>{{ (profile.name || '?').slice(0, 1) }}</span>
-          <img :src="avatarUrl(bundle.uid)" alt="" @error="$event.currentTarget.style.display = 'none'">
+      <section class="summary">
+        <div class="player">
+          <div class="profile-avatar">
+            <span>{{ (profile.name || '?').slice(0, 1) }}</span>
+            <img :src="avatarUrl(bundle.uid)" alt="" @error="$event.currentTarget.style.display = 'none'">
+          </div>
+          <h2>{{ profile.name || `用户 ${bundle.uid}` }}<small v-if="profile.nickname && profile.nickname !== profile.name">{{ profile.nickname }}</small></h2>
+          <p>ID {{ bundle.uid }}</p>
         </div>
-        <h2>{{ profile.name || `用户 ${bundle.uid}` }}<small v-if="profile.nickname && profile.nickname !== profile.name">{{ profile.nickname }}</small></h2>
-        <p class="pv-meta">
-          ID {{ bundle.uid }}
-          <span v-if="region"> · {{ region }}</span>
-          <span v-if="profile.qiupai"> · {{ profile.qiupai }}</span>
-        </p>
+
         <div class="score-overview">
           <div><span>当前积分</span><strong>{{ show(profile.score) }}</strong></div>
-          <div><span>年度最高</span><strong>{{ show(profile.yearMaxScore) }}</strong></div>
+          <div><span>年度积分</span><strong>{{ show(profile.yearMaxScore) }}</strong></div>
           <div><span>历史最高</span><strong>{{ show(profile.maxScore) }}</strong></div>
         </div>
-        <p v-if="profile.total" class="pv-career">生涯 {{ profile.total }} 场 · {{ profile.win }} 胜 {{ profile.lose }} 负 {{ profile.rate ? `· 胜率 ${profile.rate}` : '' }}</p>
-      </section>
 
-      <section class="pv-stats">
-        <div><span>生涯场次</span><b>{{ show(profile.total) }}</b></div>
-        <div><span>胜</span><b class="up">{{ show(profile.win) }}</b></div>
-        <div><span>负</span><b class="down">{{ show(profile.lose) }}</b></div>
-        <div><span>胜率</span><b>{{ profile.rate || '-' }}</b></div>
-        <div><span>赛事</span><b>{{ stats.events }}</b></div>
-      </section>
-
-      <section v-if="chart" class="score-trend">
-        <div class="trend-heading">
-          <h3>{{ selfName }}单打积分趋势</h3>
-          <span>{{ curve.length }} 个赛点</span>
+        <div class="scope-bar">
+          <span>比赛统计</span>
+          <div class="scope-tabs" aria-label="统计时间范围">
+            <button :class="{ active: statScope === 'all' }" @click="statScope = 'all'">全部</button>
+            <button :class="{ active: statScope === 'year' }" @click="statScope = 'year'">近一年</button>
+          </div>
         </div>
-        <svg :viewBox="`0 0 ${chart.width} ${chart.height}`" role="img" aria-label="积分趋势">
-          <g class="trend-grid">
-            <g v-for="tick in chart.yTicks" :key="tick.value">
-              <line :x1="chart.left" :x2="chart.width - chart.right" :y1="tick.y" :y2="tick.y" />
-              <text :x="chart.left - 6" :y="tick.y + 3" text-anchor="end">{{ tick.value }}</text>
+        <div class="stats-head"><span>类型</span><span>总数</span><span>胜场</span><span>败场</span></div>
+        <div v-for="row in statRows" :key="row.label" class="stats-row">
+          <strong>{{ row.label }}</strong>
+          <b>{{ row.total }}</b>
+          <b class="positive">{{ row.wins }}</b>
+          <b class="negative">{{ row.losses }}</b>
+        </div>
+
+        <div v-if="trendChart" class="score-trend">
+          <div class="trend-heading">
+            <h3>{{ selfName }}{{ statScope === 'year' ? '近一年' : '全部' }}单打积分趋势</h3>
+            <span>{{ trendChart.recordCount }} 场</span>
+          </div>
+          <svg
+            :viewBox="`0 0 ${trendChart.width} ${trendChart.height}`"
+            role="img"
+            :aria-label="`${selfName}单打积分趋势`"
+          >
+            <g class="trend-grid">
+              <g v-for="tick in trendChart.yTicks" :key="tick.value">
+                <line :x1="trendChart.left" :x2="trendChart.width - trendChart.right" :y1="tick.y" :y2="tick.y" />
+                <text :x="trendChart.left - 7" :y="tick.y + 4" text-anchor="end">{{ tick.value }}</text>
+              </g>
             </g>
-          </g>
-          <path class="trend-line" :d="chart.path" />
-          <g class="trend-mark">
-            <circle v-for="(point, index) in chart.points" :key="index" :cx="point.x" :cy="point.y" :r="index === chart.points.length - 1 ? 3.6 : 2.2" />
-          </g>
-          <g class="trend-dates">
-            <text :x="chart.left" :y="chart.height - 8" text-anchor="start">{{ chart.firstLabel }}</text>
-            <text :x="chart.width - chart.right" :y="chart.height - 8" text-anchor="end">{{ chart.lastLabel }}</text>
-          </g>
-        </svg>
+            <line
+              class="trend-axis"
+              :x1="trendChart.left"
+              :x2="trendChart.left"
+              :y1="trendChart.top"
+              :y2="trendChart.height - trendChart.bottom"
+            />
+            <polyline class="trend-line" :points="trendChart.points" />
+            <g class="trend-dates">
+              <g v-for="tick in trendChart.xTicks" :key="`${tick.date}-${tick.x}`">
+                <line :x1="tick.x" :x2="tick.x" :y1="trendChart.height - trendChart.bottom" :y2="trendChart.height - trendChart.bottom + 5" />
+                <text :x="tick.x" :y="trendChart.height - 19" text-anchor="middle">
+                  <tspan :x="tick.x">{{ String(tick.date).slice(0, 4) }}</tspan>
+                  <tspan :x="tick.x" dy="9">{{ String(tick.date).slice(5) }}</tspan>
+                </text>
+              </g>
+            </g>
+            <g v-if="trendChart.maxPoint !== trendChart.currentPoint" class="trend-mark">
+              <circle :cx="trendChart.maxPoint.x" :cy="trendChart.maxPoint.y" r="3" />
+              <text :x="trendChart.maxPoint.x" :y="trendChart.maxPoint.y - 8" text-anchor="middle">{{ trendChart.maxPoint.score }}</text>
+            </g>
+            <g v-if="trendChart.minPoint !== trendChart.currentPoint" class="trend-mark">
+              <circle :cx="trendChart.minPoint.x" :cy="trendChart.minPoint.y" r="3" />
+              <text :x="trendChart.minPoint.x" :y="trendChart.minPoint.y + 15" text-anchor="middle">{{ trendChart.minPoint.score }}</text>
+            </g>
+            <g class="trend-mark current">
+              <circle :cx="trendChart.currentPoint.x" :cy="trendChart.currentPoint.y" r="3" />
+              <text :x="trendChart.currentPoint.x + 6" :y="trendChart.currentPoint.y + 4">{{ trendChart.currentPoint.score }}</text>
+            </g>
+          </svg>
+        </div>
       </section>
 
       <section class="records">
         <div class="section-head">
           <h2>交手记录</h2>
-          <span>逐场记录 {{ matches.length }} 条</span>
+          <span>{{ loading ? `已加载 ${scopedRecords.length} 场` : `共 ${scopedRecords.length} 场` }}</span>
         </div>
 
-        <div v-if="visibleMatches.length" class="table-wrap">
+        <div v-if="visibleRecords.length" class="table-wrap">
           <table>
-            <thead><tr><th style="width: 10%">序号</th><th style="width: 20%">我方</th><th style="width: 28%">敌方</th><th style="width: 16%">比分</th><th style="width: 26%">日期</th></tr></thead>
+            <thead><tr><th style="width:10%">序号</th><th style="width:24%">我方</th><th style="width:26%">敌方</th><th style="width:16%">比分</th><th style="width:12%">变化</th><th style="width:12%">日期</th></tr></thead>
             <tbody>
-              <tr v-for="(match, index) in visibleMatches" :key="`${match.date}-${match.oppUid}-${index}`">
+              <tr v-for="(record, index) in visibleRecords" :key="record.gameId || `${record.date}-${record.oppUid}-${index}`">
                 <td>{{ (page - 1) * pageSize + index + 1 }}</td>
-                <td>{{ selfName }}</td>
-                <td><strong>{{ match.oppName || `用户 ${match.oppUid}` }}</strong></td>
-                <td><strong class="score">{{ match.myScore }}:{{ match.oppScore }}</strong></td>
-                <td>{{ match.date || '-' }}</td>
+                <td>{{ teamName(record.selfName || selfName, record.teammateName) }}</td>
+                <td><strong>{{ teamName(record.opponentName, record.opponentTeammateName) }}</strong></td>
+                <td><strong class="score">{{ record.scoreLine }}</strong></td>
+                <td :class="{ positive: String(record.scoreChange).startsWith('+'), negative: String(record.scoreChange).startsWith('-') }">{{ record.scoreChange || '-' }}</td>
+                <td>{{ record.date || '-' }}</td>
               </tr>
             </tbody>
           </table>
         </div>
-        <div v-else class="empty">该选手暂无有积分记录的赛事对局</div>
+        <div v-else class="empty">没有查询到该时间范围内的交手记录</div>
 
         <div v-if="totalPages > 1" class="pager">
           <button :disabled="page === 1" @click="changePage(page - 1)">上一页</button>
@@ -124,12 +155,6 @@
           <button :disabled="page === totalPages" @click="changePage(page + 1)">下一页</button>
         </div>
       </section>
-
-      <p class="pv-note">
-        生涯战绩取自官方选手资料；下方为逐场对局记录（{{ matches.length }} 条），覆盖 {{ stats.events }} 场赛事{{ coverage ? `（${coverage}）` : '' }}，
-        不含未计分的友谊赛、双打和团体赛，个别轮空或弃权场次可能仍列在记录中。
-        <span v-if="bundle.meta.fromCache">本页来自本地缓存。</span>
-      </p>
     </template>
   </div>
 </template>
@@ -145,28 +170,126 @@ const error = ref('')
 const bundle = ref(null)
 const candidates = ref([])
 const page = ref(1)
+const statScope = ref('all')
 const pageSize = 20
 
 const profile = computed(() => bundle.value?.profile || {})
-const stats = computed(() => bundle.value?.stats || {})
-const curve = computed(() => bundle.value?.curve || [])
 const matches = computed(() => bundle.value?.matches || [])
+const fallbackCurve = computed(() => bundle.value?.curve || [])
 const selfName = computed(() => profile.value.name || `用户 ${bundle.value?.uid || ''}`)
-const coverage = computed(() => {
-  const points = curve.value
-  if (!points.length) return ''
-  return `${points[0].date} ~ ${points[points.length - 1].date}`
+
+const oneYearCutoff = computed(() => {
+  const cutoff = new Date()
+  cutoff.setFullYear(cutoff.getFullYear() - 1)
+  return [
+    cutoff.getFullYear(),
+    String(cutoff.getMonth() + 1).padStart(2, '0'),
+    String(cutoff.getDate()).padStart(2, '0')
+  ].join('-')
 })
 
-const region = computed(() => {
-  const value = [profile.value.province, profile.value.city].filter(Boolean).join(' ')
-  return value && value !== '0' ? value : ''
+const scopedRecords = computed(() => {
+  return statScope.value === 'year'
+    ? matches.value.filter(record => String(record.date || '') >= oneYearCutoff.value)
+    : matches.value
 })
 
-const totalPages = computed(() => Math.max(1, Math.ceil(matches.value.length / pageSize)))
-const visibleMatches = computed(() => {
+const totalPages = computed(() => Math.max(1, Math.ceil(scopedRecords.value.length / pageSize)))
+const visibleRecords = computed(() => {
   const start = (page.value - 1) * pageSize
-  return matches.value.slice(start, start + pageSize)
+  return scopedRecords.value.slice(start, start + pageSize)
+})
+
+function numberValue(value) {
+  const text = String(value ?? '').replace('+', '').trim()
+  if (!text || text === '-') return null
+  const numeric = Number(text)
+  return Number.isFinite(numeric) ? numeric : null
+}
+
+function isSettledScoreChange(value) {
+  return numberValue(value) !== null
+}
+
+function buildStatRow(label, records) {
+  return {
+    label,
+    total: records.length,
+    wins: records.filter(record => record.outcome === 'win').length,
+    losses: records.filter(record => record.outcome === 'loss').length
+  }
+}
+
+const statRows = computed(() => [
+  buildStatRow('全部', scopedRecords.value),
+  buildStatRow('单打', scopedRecords.value.filter(record => !record.doubles)),
+  buildStatRow('双打', scopedRecords.value.filter(record => record.doubles))
+])
+
+const trendChart = computed(() => {
+  if (!bundle.value) return null
+  const records = scopedRecords.value.filter(record => !record.doubles && isSettledScoreChange(record.scoreChange))
+  let running = numberValue(profile.value.score)
+
+  let series = []
+  if (running !== null && records.length) {
+    const reversedTrace = records.map(record => {
+      const delta = numberValue(record.scoreChange)
+      const after = running
+      const before = running - delta
+      running = before
+      return { date: record.date, before, after }
+    })
+    const chronological = [...reversedTrace].reverse()
+    series = [
+      { date: chronological[0].date, score: chronological[0].before },
+      ...chronological.map(record => ({ date: record.date, score: record.after }))
+    ]
+  } else if (fallbackCurve.value.length >= 2) {
+    series = fallbackCurve.value.map(p => ({ date: p.date, score: Number(p.score) }))
+  } else {
+    return null
+  }
+
+  const width = 360
+  const height = 218
+  const left = 42
+  const right = 30
+  const top = 34
+  const bottom = 34
+  const plotWidth = width - left - right
+  const plotHeight = height - top - bottom
+  const scores = series.map(point => point.score)
+  const rawMin = Math.min(...scores)
+  const rawMax = Math.max(...scores)
+  const yMin = Math.floor((rawMin - 25) / 50) * 50
+  const yMax = Math.ceil((rawMax + 25) / 50) * 50
+  const yRange = Math.max(50, yMax - yMin)
+  const points = series.map((point, index) => ({
+    ...point,
+    x: left + (series.length === 1 ? 0 : index / (series.length - 1)) * plotWidth,
+    y: top + ((yMax - point.score) / yRange) * plotHeight
+  }))
+  const yTicks = Array.from({ length: 5 }, (_, index) => {
+    const value = Math.round(yMax - (yRange * index) / 4)
+    return { value, y: top + (plotHeight * index) / 4 }
+  })
+  const tickIndexes = [...new Set(
+    Array.from({ length: Math.min(5, series.length) }, (_, index) =>
+      Math.round((index * (series.length - 1)) / Math.max(1, Math.min(5, series.length) - 1))
+    )
+  )]
+  const xTicks = tickIndexes.map(index => points[index])
+  const maxPoint = points.find(point => point.score === rawMax)
+  const minPoint = points.find(point => point.score === rawMin)
+  const currentPoint = points.at(-1)
+
+  return {
+    width, height, left, right, top, bottom,
+    points: points.map(point => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' '),
+    yTicks, xTicks, maxPoint, minPoint, currentPoint,
+    recordCount: records.length
+  }
 })
 
 function show(value) {
@@ -176,6 +299,10 @@ function show(value) {
 function avatarUrl(userId) {
   const padded = String(userId || '').padStart(8, '0')
   return `https://oss.kaiqiu.cc/avatar/000/${padded.slice(2, 4)}/${padded.slice(4, 6)}/${padded.slice(6, 8)}_avatar_big.jpg`
+}
+
+function teamName(primary, teammate) {
+  return teammate ? `${primary || '-'} / ${teammate}` : (primary || '-')
 }
 
 function parseUid(value) {
@@ -189,51 +316,6 @@ function changePage(next) {
   document.querySelector('.records')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-/* ---------- 积分曲线 ---------- */
-
-const chart = computed(() => {
-  const points = curve.value
-  if (points.length < 2) return null
-  const width = 520
-  const height = 196
-  const left = 40
-  const right = 14
-  const top = 16
-  const bottom = 26
-  const values = points.map((p) => Number(p.score))
-  let min = Math.min(...values)
-  let max = Math.max(...values)
-  if (max - min < 20) {
-    min -= 10
-    max += 10
-  }
-  const pad = Math.round((max - min) * 0.08)
-  min -= pad
-  max += pad
-  const span = max - min || 1
-  const plotW = width - left - right
-  const plotH = height - top - bottom
-  const xOf = (index) => left + (index * plotW) / (points.length - 1)
-  const yOf = (value) => top + plotH - ((value - min) / span) * plotH
-  const mapped = points.map((p, index) => ({ x: xOf(index), y: yOf(Number(p.score)), score: Number(p.score) }))
-  const pathD = mapped.map((p, index) => `${index === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')
-  const yTicks = Array.from({ length: 4 }, (_, index) => {
-    const value = Math.round(min + (span * index) / 3)
-    return { value, y: yOf(value) }
-  })
-  return {
-    width,
-    height,
-    left,
-    right,
-    points: mapped,
-    path: pathD,
-    yTicks,
-    firstLabel: points[0].date,
-    lastLabel: points[points.length - 1].date
-  }
-})
-
 async function loadPlayer(uid) {
   loading.value = true
   error.value = ''
@@ -242,10 +324,10 @@ async function loadPlayer(uid) {
     loadingText.value = '正在拉取逐场战绩，首次较慢，请稍候…'
   }, 1500)
   try {
-    // 后端一次性聚合：资料 + 积分曲线 + 逐场对局 + 统计
     const res = await fetchUpstream('/player', { uid })
     bundle.value = res.data
     page.value = 1
+    statScope.value = 'all'
   } catch (err) {
     error.value = err.message
     bundle.value = null
@@ -322,20 +404,6 @@ async function chooseCandidate(user) {
 
 .pv-loading { margin-top: 14px; }
 
-.pv-profile { padding: 22px 16px 16px; color: #fff; background: var(--blue); text-align: center; }
-.pv-avatar { position: relative; width: 96px; height: 96px; margin: 0 auto 12px; border: 8px solid #fff; border-radius: 50%; display: grid; place-items: center; overflow: hidden; background: #8fd5ef; font-size: 26px; font-weight: 700; }
-.pv-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.pv-profile h2 { margin: 0; font-size: 26px; }
-.pv-profile h2 small { margin-left: 6px; font-size: 13px; font-weight: 500; opacity: .85; }
-.pv-meta { margin: 5px 0 0; font-size: 12px; opacity: .9; }
-.pv-career { margin: 0 0 4px; font-size: 12px; opacity: .9; }
-
-.pv-stats { padding: 14px 8px; display: grid; grid-template-columns: repeat(5, 1fr); border-bottom: 1px solid #eee; }
-.pv-stats > div { min-width: 0; text-align: center; }
-.pv-stats span { display: block; color: #999; font-size: 10px; }
-.pv-stats b { display: block; margin-top: 5px; color: #444; font-size: 18px; }
-.pv-stats b.up { color: var(--blue); }
-.pv-stats b.down { color: #c9553d; }
-
-.pv-note { margin: 14px 14px 30px; color: #aaa; font-size: 11px; line-height: 1.7; }
+.positive { color: var(--blue); }
+.negative { color: #c9553d; }
 </style>

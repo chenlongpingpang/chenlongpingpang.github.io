@@ -179,21 +179,33 @@ async function fetchAllGames(uid, titleMap) {
   const matches = []
   const seenGame = new Set()
   const scoreMap = new Map()
-  const reasons = { bye: 0, notSelf: 0, noOpp: 0, double: 0, unparsable: 0, duplicate: 0, valid: 0 }
+  const reasons = { notSelf: 0, noOpp: 0, double: 0, unparsable: 0, duplicate: 0, valid: 0 }
   let selfName = ''
+  const cleanName = (v) => { const t = String(v ?? '').trim(); return t && t !== '0' ? t : '' }
   for (const g of all) {
-    if (!g || String(g.flag) === '1') { reasons.bye++; continue }
-    const isFirst = String(g.uid1) === String(uid)
-    const isSecond = String(g.uid2) === String(uid)
-    if (!isFirst && !isSecond) { reasons.notSelf++; continue }
-    const oppUid = isFirst ? String(g.uid2) : String(g.uid1)
+    if (!g) { reasons.notSelf++; continue }
+    const inLeft = String(g.uid1) === String(uid) || String(g.uid11) === String(uid)
+    const inRight = String(g.uid2) === String(uid) || String(g.uid22) === String(uid)
+    if (!inLeft && !inRight) { reasons.notSelf++; continue }
+    const first = inLeft
+    const doubles = String(g.uid11) !== '0' || String(g.uid22) !== '0'
+    if (doubles) reasons.double++
+    const oppUid = first ? String(g.uid2) : String(g.uid1)
     if (!oppUid || oppUid === '0') { reasons.noOpp++; continue }
-    // 双打：队友位 uid11/uid22 非 0，官方生涯统计只计单打
-    if (String(g.uid11) !== '0' || String(g.uid22) !== '0') { reasons.double++; continue }
-    const myName = isFirst ? g.username1 : g.username2
-    if (!selfName && myName) selfName = myName
-    const myScore = Number(String(isFirst ? g.result1 : g.result2).replace(/[^\d]/g, '') || '')
-    const oppScoreText = String(isFirst ? g.result2 : g.result1).replace(/[^\d]/g, '')
+
+    const selfOnTeammate = String(first ? g.uid11 : g.uid22) === String(uid)
+    const selfNameRaw = cleanName(selfOnTeammate
+      ? (first ? g.username11 : g.username22)
+      : (first ? g.username1 : g.username2))
+    const teammateName = cleanName(selfOnTeammate
+      ? (first ? g.username1 : g.username2)
+      : (first ? g.username11 : g.username22))
+    const opponentName = cleanName(first ? g.username2 : g.username1)
+    const opponentTeammateName = cleanName(first ? g.username22 : g.username11)
+    if (!selfName && selfNameRaw) selfName = selfNameRaw
+
+    const myScore = Number(String(first ? g.result1 : g.result2).replace(/[^\d]/g, '') || '')
+    const oppScoreText = String(first ? g.result2 : g.result1).replace(/[^\d]/g, '')
     if (!Number.isFinite(myScore) || !oppScoreText) { reasons.unparsable++; continue }
     const oppScore = Number(oppScoreText)
     if (!Number.isFinite(oppScore)) { reasons.unparsable++; continue }
@@ -202,8 +214,11 @@ async function fetchAllGames(uid, titleMap) {
     seenGame.add(dedupeKey)
     reasons.valid++
 
-    // 本人赛后积分快照：仅方1行归属明确，按赛事去重取较新一场，供全量积分曲线
-    if (isFirst) {
+    const outcome = myScore > oppScore ? 'win' : myScore < oppScore ? 'loss' : 'draw'
+    const scoreChange = String(first ? g.score1 : g.score2 ?? '')
+
+    // 本人赛后积分快照：仅方1行归属明确，按赛事去重取较新一场，作为曲线兜底
+    if (first) {
       const sc = Number(g.ascore1)
       if (Number.isFinite(sc) && sc > 0) {
         const aid = String(g.eventid || '')
@@ -217,22 +232,31 @@ async function fetchAllGames(uid, titleMap) {
 
     const rawDate = String(g.dateline || '')
     matches.push({
+      gameId: String(g.gameid || ''),
+      eventId: String(g.eventid || ''),
       date: formatDate(rawDate),
       rawDate,
       title: titleMap.get(String(g.eventid || '')) || '',
-      round: '',
+      selfName: selfNameRaw,
+      teammateName,
+      opponentName,
+      opponentTeammateName,
       oppUid,
-      oppName: isFirst ? g.username2 || '' : g.username1 || '',
+      scoreLine: `${myScore}:${oppScore}`,
       myScore,
       oppScore,
-      win: myScore > oppScore,
+      scoreChange,
+      outcome,
+      doubles,
+      win: outcome === 'win',
       oppRating: null
     })
   }
 
   matches.sort((a, b) => (a.rawDate < b.rawDate ? 1 : a.rawDate > b.rawDate ? -1 : 0))
   const gameCurve = [...scoreMap.values()]
-  return { matches, selfName, gameCurve, reasons, totalRows: all.length }
+  const rawDouble = all.filter(g => String(g.uid11) !== '0' || String(g.uid22) !== '0').length
+  return { matches, selfName, gameCurve, reasons, totalRows: all.length, rawDouble }
 }
 
 async function buildPlayer(uid) {
@@ -266,7 +290,7 @@ async function buildPlayer(uid) {
     if (event.eventid) titleMap.set(String(event.eventid), event.title || '')
   }
 
-  const { matches, selfName: gamesSelfName, gameCurve, reasons, totalRows } = await fetchAllGames(uid, titleMap)
+  const { matches, selfName: gamesSelfName, gameCurve, reasons, totalRows, rawDouble } = await fetchAllGames(uid, titleMap)
 
   const wins = matches.filter((m) => m.win).length
   const losses = matches.length - wins
@@ -326,7 +350,7 @@ async function buildPlayer(uid) {
       careerWin: Number(profile?.win) || null,
       careerLose: Number(profile?.lose) || null
     },
-    meta: { generatedAt: new Date().toISOString(), elapsedMs: Date.now() - startedAt, fromCache: false, build: 'full-curve-v3', debug: { reasons, totalRows } }
+    meta: { generatedAt: new Date().toISOString(), elapsedMs: Date.now() - startedAt, fromCache: false, build: 'full-curve-v3', debug: { reasons, totalRows, rawDouble } }
   }
 }
 
